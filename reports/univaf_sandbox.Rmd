@@ -99,3 +99,64 @@ dav %>%
                        axis.ticks.y=element_blank())
 ```
 
+
+
+### Old (from NJ)
+
+```{r}
+comp_scatter <- function(DF, xlab='X', ylab='Y', title=NULL, log_x=F, log_y=F, this_state=NULL, smooth=F) {
+  p <- ggplot(DF, aes(x, y)) + geom_point(alpha=0.3, size=0.4)
+  if(is.null(title)) { title = xlab }
+  if(log_x)  { p = p + scale_x_log10(paste(xlab, '(log)')) } else { p = p + scale_x_continuous(xlab) }
+  if(log_y)  { p = p + scale_y_log10(paste(ylab, '(log)')) } else { p = p + scale_y_continuous(ylab) }
+  if(!is.null(this_state)) {
+    p = p + geom_point(data=DF %>% filter(state==this_state), color='#E69F00',  size=0.4)
+    title = sprintf("%s (%s)", title, this_state)
+    if(smooth) { p = p + geom_smooth(data=DF %>% filter(state==this_state), color='#E69F00', method='lm', alpha=0) }
+  }
+  if(smooth) { p = p + geom_smooth(method='lm', alpha=0, color='#56B4E9') }
+  p  + my_theme() # + ggtitle(title)
+}
+```
+
+```{r}
+stats = dav %>% group_by(zip) %>%
+  summarize(n_locs=n_distinct(id), n_slots=n(), hours_available=mean(range), last_available=mean(last_time_ahead)) %>%
+  inner_join(dzip) %>%
+  mutate(slots_per_person=n_slots/total)
+
+comp_scatter(stats %>% mutate(x=ifelse(total < 1000, 1000, total), y=ifelse(n_slots < 10, 10, n_slots)), xlab='Population', ylab='Number of Slots', log_x=T, log_y=T, this_state=S)
+```
+
+```{r, fig.height=6, fig.width=8}
+# Here is a visual comparison of appointment availability (as meaasured by slots/person) by various demographic risk factors. The orange dots represent zip-codes (ZTCA's) in New Jersey, and the orange line represents the linear fit. The blue line is the linear for national data.
+Rmisc::multiplot(
+  comp_scatter(stats %>% mutate(x=p_black, y=slots_per_person), xlab='Share Black', ylab='Slots/Person', log_x=T, log_y=T, this_state=S,smooth=T),
+  comp_scatter(stats %>% mutate(x=svi_socioeconomic, y=slots_per_person), xlab='Socioeconomic SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
+  comp_scatter(stats %>% mutate(x=svi_household, y=slots_per_person), xlab='Household SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
+  comp_scatter(stats %>% mutate(x=svi_minority, y=slots_per_person), xlab='Minority SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
+  cols=2)
+
+#stats %>% mutate(x=svi_minority, y=hours_available) %>% comp_scatter(xlab='Minority SVI', ylab='Hours available', log_x=F, log_y=F, this_state=S,smooth=T)
+```
+
+
+We can combine these factors by running linear regressions for the outcome variable we've looked at so far:
+
+```{r, eval=T}
+stargazer::stargazer(
+  lm(slots_per_person ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing + state, data=stats),
+  lm(slots_per_person ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing, data=stats %>% filter(state==S)),
+  lm(hours_available ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing + state, data=stats),
+  lm(hours_available ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing, data=stats %>% filter(state==S)),
+  lm(last_available ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing + state, data=stats),
+  lm(last_available ~ log(total) + p_black + svi_socioeconomic + svi_household + svi_minority + svi_housing, data=stats %>% filter(state==S)),
+  covariate.labels = c("Population (log)", "Share Black", "Socioeonomic SVI", "Household SVI", "Minority SVI", "Housing SVI", "Intercept"),
+  type='text', no.space = T, keep.stat = c('n','adj.rsq'),
+  add.lines = list(c("States", "All", S, "All", S, "All", S)), omit='state'
+)
+```
+
+* Compared to the relationship between social vulnerability and appointment access, New Jersey generally does better. For example, zipcodes with a higher Socioeconomic SVI index have more slots/person (row 3 in columns 1 and 2).
+* An exception is in the Minority SVI index: zipcodes with a high minority SVI index have significantly fewer appointments, and less time to book them (row 5, columns 1-4).
+* Since we didn't find a strong correlation between access and vaccination rates (by county) in the previous section, we might not want to put too much weight on these results.
