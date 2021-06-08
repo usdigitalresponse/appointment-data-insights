@@ -1,0 +1,151 @@
+---
+title: "Univaf appointment availability data - Coverage"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
+source("shared.R")
+```
+
+```{r read_univaf_data}
+dloc = read_location_data()
+
+dav  = read_availability_slot_data() %>%
+  filter(slot_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-06-07 00:00:00', 'UTC')) %>%
+  inner_join(dloc, by='id')
+
+# read non-slot availability data
+dav2 = read_availability_data() %>%
+  filter(checked_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
+         checked_time < as.POSIXct('2021-06-07 00:00:00', 'UTC'))
+ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
+```
+
+* In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [univaf](http://getmyvax.org/docs/) project.
+* We look at the two weeks between 2021-05-24 and 2021-06-06.
+* We count a slot as "booked" if we see it available first, and then not anymore (up to two hours before the appointment starts).
+
+**TLDR**
+
+* Slot-level Appointment data availability ranges from 19% (NH) to 95% (CO).
+* We estimate that somewhere between 0% (NH) and 138% (WV) of vaccines administered in the last two weeks are covered in our slot-level data.
+* For locations that report slots and/or appointment numbers, the reporting is very stable.
+* For states: ME, VT, WI have the most unreliable reporting. For providers, walgreens has the most unreliable reporting.
+
+
+## Coverage
+
+We look at how many locations we have, how many have availability at all, how many report slot-level data. Then we compare these to the population and the number of vaccinations that happened during this time (two weeks). These numbers might not match up (vaccinations could be reported later), so the "share of vaccinations covered" statistic could go over 100%.
+
+```{r coverage_table}
+dzip %>%
+  group_by(state) %>% summarize(pop=sum(total, na.rm=T)) %>% 
+  inner_join(dvax, by='state') %>%
+  inner_join(dloc %>% group_by(state) %>% summarize(n_locs=n()), by='state') %>%
+  inner_join(dloc %>% inner_join(ids_dav) %>% group_by(state) %>% summarize(n_locs_av=n()), by='state') %>%
+  mutate(p_locs_av=round(n_locs_av/n_locs, 3)) %>%
+  inner_join(
+    dav %>% group_by(state) %>% summarize(n_locs_slots=n_distinct(id), 
+                                          n_slots=n(),
+                                          n_booked=sum(booked)), 
+  by='state') %>%
+  mutate(slots_per_person=round(n_slots/pop, 3),
+         pop=big_numbers(pop, force_k=F, force_m=T),
+         p_locs_slots=round(n_locs_slots/n_locs_av, 3),
+         slots_per_location=round(n_slots/n_locs_slots),
+         p_slots_booked=round(n_booked/n_slots, 3),
+         p_vax=round(n_booked/n_vax, 3)) %>%
+  select(State=state,
+         `Pop (M)`=pop,
+         `Vax. last 2 weeks`=n_vax,
+         `Locations`=n_locs,
+         `Locations with av.`=n_locs_av,
+         `Share locations with av.`=p_locs_av,
+         `Locations with slot`=n_locs_slots,
+         `Share locations with slots`=p_locs_slots,
+         `Slots`=n_slots,
+         `Slots per location`=slots_per_location,
+         `Slots per person`=slots_per_person,
+         `Slots booked`=n_booked,
+         `Share slots booked`=p_slots_booked,
+         `Share vax in data`=p_vax
+         ) %>%
+  DT::datatable()
+```
+
+
+## Sample Data
+
+Here are the actual availability counts for a sample of 25 locations. You can see different supply patterns, and some example locations that only publish "has availability" (rather than "x appointments") info.
+
+```{r sample}
+set.seed(0)
+ids = rbind(
+  # sample 2 on/off places
+  dav2 %>% filter(availability=='+') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(2),
+  # sample 23 numeric places
+  dav2 %>% filter(availability!='0' & availability != '+' & availability != '1') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(23))
+```
+
+```{r plot_sample, fig.height=6, fig.width=9}
+dav2 %>%
+  filter(id %in% ids$id) %>% mutate(availability=ifelse(availability=='+', 1, as.numeric(availability))) %>%
+  inner_join(dloc) %>%
+  mutate(name=paste(id, name)) %>%
+  arrange(id, checked_time) %>%
+  ggplot(aes(checked_time, availability, color=provider)) + geom_point() + facet_wrap(~name, scales='free_y') +
+    xlab("Time checked") + ylab("Number of appointments available") +
+    my_theme() + theme(legend.position = 'none')
+```
+
+## Continuity of data
+
+Here we look at how stable data updates are. We count the minutes between updates for each location (taking into account that I'm scraping our API every hour), and take the count, number of updates missed (delta > 90 minutes), average minutes, median, 95 percentile, and 99 percentiles. Then we average those by state and provider.
+
+```{r}
+dav3 = dav2 %>% # filter(id==5603) %>%
+  select(id, checked_time) %>%
+  group_by(id) %>%
+  arrange(checked_time) %>%
+  mutate(
+    delta=as.numeric((checked_time-lag(checked_time))/60),
+    miss = ifelse(delta > 90, 1, 0)
+  ) %>%
+  ungroup() %>%
+  inner_join(dloc, by='id') 
+
+dav_stats = dav3 %>%
+  group_by(state, provider, id) %>%
+  summarize(n_updates=n(),
+            miss=mean(miss, na.rm=T),
+            avg=mean(delta, na.rm=T),
+            p50=quantile(delta, 0.50, na.rm=T),
+            p95=quantile(delta, 0.95, na.rm=T),
+            p99=quantile(delta, 0.99, na.rm=T),
+            max=max(delta, na.rm=T)) %>% ungroup()
+```
+
+
+By state:
+```{r}
+dav_stats %>% select(-provider, -id) %>%
+  group_by(state) %>% summarise_all(mean) %>%
+  DT::datatable() %>%
+  DT::formatRound(columns=c('n_updates', 'miss', 'avg','p50', 'p95', 'p99', 'max'), digits=2)
+```
+
+By provider (with at least 100 locations):
+```{r}
+dav_stats %>%
+  inner_join(dav_stats %>% ungroup() %>% select(-state, -id) %>%
+               group_by(provider)  %>% summarize(n=n()) %>% filter(n>101) %>%
+               select(provider), by='provider') %>%
+  select(-state, -id) %>% group_by(provider) %>% summarise_all(mean) %>%
+  DT::datatable() %>%
+  DT::formatRound(columns=c('n_updates', 'miss', 'avg','p50', 'p95', 'p99', 'max'), digits=2)
+```

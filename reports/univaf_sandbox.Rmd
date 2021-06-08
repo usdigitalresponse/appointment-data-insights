@@ -1,0 +1,101 @@
+---
+title: "Univaf appointment availability data - Sandbox"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T)
+source("shared.R")
+
+dloc = read_location_data()
+dav  = read_availability_slot_data() %>% inner_join(dloc, by='id')
+```
+
+
+In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [univaf](http://getmyvax.org/docs/) project. The main question we're looking at is whether this kind of data can be used to identify issues in vaccine access by different demographics. Another question is whether this can help us understand the role of barriers to access, as opposed to more ideological barriers, can help us understand trailing vaccination rates.
+
+
+* This report pertains to *slot-level* appointment data only. We often don't have slot-level data, so this covers a subset of appointments. Of the `r nrow(dloc)` locations in our national DB, `r length(unique(dav$id))` have slot-level data.
+* We take as the interval a slot is available for as the time between the first time we saw it being available to the last time.
+* 'work time' is defined as Mon-Fri 9am-5pm.
+* For slots we compute the following statistics:
+    1. how many slots are ever seen to be available for that hour
+    2. how long (in number of hours) are they available for on average
+    3. what is the average _latest_ time (in number of hours ahead for the appointment time) you can still book the slot
+
+
+
+
+### Number of slots per state per day
+
+```{r, fig.height=7, fig.width=10}
+dav %>% 
+  filter(slot_time > as.POSIXct('2021-05-10 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC')) %>%
+  mutate(ds=as.Date(slot_time)) %>% group_by(state, ds) %>% summarize(n=n()) %>%
+  ggplot(aes(ds, n)) + geom_line() +
+    scale_x_date("Date", limits=as.Date(c('2021-05-10','2021-06-14'))) +
+    scale_y_continuous("Total number of slots (k)", labels=big_numbers) +
+    my_theme() + facet_wrap(~state, scales = 'free_y')
+```
+
+
+### Early regression of vaccination rates on availability
+
+```{r}
+dagg <- dav %>% 
+  inner_join(dvs %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(fips) %>%
+  summarize(
+    n_locations=n_distinct(id),
+    n_slots=n(),
+    n_slots_inside=sum(work_time),
+    n_slots_outside=sum(1-work_time),
+    p_outside=mean(1-work_time),
+    avg_range=mean(range),
+    avg_range_outside=mean(ifelse(work_time==0, range, NA), na.rm=T),
+    avg_ahead=mean(last_time_ahead),
+    avg_ahead_outside=mean(ifelse(work_time==0, last_time_ahead, NA), na.rm=T)
+  ) %>% ungroup() %>%
+  left_join(dcou, by='fips') %>%
+  mutate(
+    slots_per_person=n_slots/population,
+    slots_per_person_inside=n_slots_inside/population,
+    slots_per_person_outside=n_slots_outside/population
+  )
+```
+
+```{r}
+stargazer::stargazer(
+  lm(vax_rate ~ log(population), data=dagg),
+  lm(vax_rate ~ log(population) + hesitant, data=dagg),
+  lm(vax_rate ~ log(population) + slots_per_person + avg_range + avg_ahead + p_outside, data=dagg),
+  lm(vax_rate ~ log(population) + slots_per_person + avg_range + avg_ahead + p_outside + hesitant, data=dagg),
+  type='text', no.space = T, keep.stat = c('n','adj.rsq'),
+  covariate.labels = c("Population (log)", "% hesitant (CDC survey)", "Slots/Person", "Average range (hrs)", "Average time ahead (hrs)", "% slots outside working hours", "Intercept")
+)
+```
+
+
+### Visualization of range of `checked_at` time
+
+* sample 10 appointments per day
+
+```{r, fig.height=5, fig.width=8}
+dav %>%
+  filter(slot_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-06-07 00:00:00', 'UTC')) %>%
+  mutate(ds=as.Date(slot_time)) %>% group_by(ds) %>% sample_n(10) %>% ungroup() %>%
+  arrange(slot_time) %>%
+  mutate(row_id=row_number()) %>%
+  ggplot(aes(x=slot_time, y=row_id)) + geom_point() +
+    geom_segment(aes(x=min, xend=max, yend=row_id), color='grey') + 
+    scale_x_datetime("Time", limits=c(as.POSIXct('2021-05-21'), NA)) +
+    my_theme() + theme(axis.title.y=element_blank(),
+                       axis.text.y=element_blank(),
+                       axis.ticks.y=element_blank())
+```
+
