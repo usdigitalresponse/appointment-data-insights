@@ -17,7 +17,9 @@ dav  = read_availability_slot_data() %>% inner_join(dloc, by='id') %>%
               slot_time < as.POSIXct('2021-06-08 00:00:00', 'UTC'))
 
 Dloc = dloc %>% filter(state==S)
-Dav = dav %>% filter(state==S)
+Dav = dav %>% filter(state==S) %>%
+  # get county from zip code
+  select(-county) %>% inner_join(dzip %>% select(zip, fips=county_fips, county), by='zip')
 ```
 
 **TLDR**
@@ -242,7 +244,7 @@ ggplot(Stats %>% filter(state==S), aes(val_x, val_y)) + geom_point() +
 ```
 
 Note that for 'last available' (min lead time), less is better.
-For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded), and the trend for NJ is a bit worse than the national average. 
+For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded), and the trend for `r S` is a bit worse than the national average. 
 
 
 
