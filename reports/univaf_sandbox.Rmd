@@ -7,7 +7,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T)
+knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
 source("shared.R")
 
 dloc = read_location_data()
@@ -15,7 +15,7 @@ dav  = read_availability_slot_data() %>% inner_join(dloc, by='id')
 ```
 
 
-In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [univaf](http://getmyvax.org/docs/) project. The main question we're looking at is whether this kind of data can be used to identify issues in vaccine access by different demographics. Another question is whether this can help us understand the role of barriers to access, as opposed to more ideological barriers, can help us understand trailing vaccination rates.
+In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project. The main question we're looking at is whether this kind of data can be used to identify issues in vaccine access by different demographics. Another question is whether this can help us understand the role of barriers to access, as opposed to more ideological barriers, can help us understand trailing vaccination rates.
 
 
 * This report pertains to *slot-level* appointment data only. We often don't have slot-level data, so this covers a subset of appointments. Of the `r nrow(dloc)` locations in our national DB, `r length(unique(dav$id))` have slot-level data.
@@ -104,6 +104,8 @@ dav %>%
 ### Old (from NJ)
 
 ```{r}
+S = 'NJ'
+
 comp_scatter <- function(DF, xlab='X', ylab='Y', title=NULL, log_x=F, log_y=F, this_state=NULL, smooth=F) {
   p <- ggplot(DF, aes(x, y)) + geom_point(alpha=0.3, size=0.4)
   if(is.null(title)) { title = xlab }
@@ -117,29 +119,26 @@ comp_scatter <- function(DF, xlab='X', ylab='Y', title=NULL, log_x=F, log_y=F, t
   if(smooth) { p = p + geom_smooth(method='lm', alpha=0, color='#56B4E9') }
   p  + my_theme() # + ggtitle(title)
 }
-```
 
-```{r}
 stats = dav %>% group_by(zip) %>%
   summarize(n_locs=n_distinct(id), n_slots=n(), hours_available=mean(range), last_available=mean(last_time_ahead)) %>%
   inner_join(dzip) %>%
   mutate(slots_per_person=n_slots/total)
 
-comp_scatter(stats %>% mutate(x=ifelse(total < 1000, 1000, total), y=ifelse(n_slots < 10, 10, n_slots)), xlab='Population', ylab='Number of Slots', log_x=T, log_y=T, this_state=S)
+#comp_scatter(stats %>% mutate(x=ifelse(total < 1000, 1000, total), y=ifelse(n_slots < 10, 10, n_slots)), xlab='Population', ylab='Number of Slots', log_x=T, log_y=T, this_state=S)
 ```
 
+
+Here is a visual comparison of appointment availability (as meaasured by slots/person) by various demographic risk factors. The orange dots represent zip-codes (ZTCA's) in New Jersey, and the orange line represents the linear fit. The blue line is the linear for national data.
+
 ```{r, fig.height=6, fig.width=8}
-# Here is a visual comparison of appointment availability (as meaasured by slots/person) by various demographic risk factors. The orange dots represent zip-codes (ZTCA's) in New Jersey, and the orange line represents the linear fit. The blue line is the linear for national data.
 Rmisc::multiplot(
   comp_scatter(stats %>% mutate(x=p_black, y=slots_per_person), xlab='Share Black', ylab='Slots/Person', log_x=T, log_y=T, this_state=S,smooth=T),
   comp_scatter(stats %>% mutate(x=svi_socioeconomic, y=slots_per_person), xlab='Socioeconomic SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
   comp_scatter(stats %>% mutate(x=svi_household, y=slots_per_person), xlab='Household SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
   comp_scatter(stats %>% mutate(x=svi_minority, y=slots_per_person), xlab='Minority SVI', ylab='Slots/Person', log_y=T, this_state=S,smooth=T),
   cols=2)
-
-#stats %>% mutate(x=svi_minority, y=hours_available) %>% comp_scatter(xlab='Minority SVI', ylab='Hours available', log_x=F, log_y=F, this_state=S,smooth=T)
 ```
-
 
 We can combine these factors by running linear regressions for the outcome variable we've looked at so far:
 
@@ -160,3 +159,132 @@ stargazer::stargazer(
 * Compared to the relationship between social vulnerability and appointment access, New Jersey generally does better. For example, zipcodes with a higher Socioeconomic SVI index have more slots/person (row 3 in columns 1 and 2).
 * An exception is in the Minority SVI index: zipcodes with a high minority SVI index have significantly fewer appointments, and less time to book them (row 5, columns 1-4).
 * Since we didn't find a strong correlation between access and vaccination rates (by county) in the previous section, we might not want to put too much weight on these results.
+
+
+
+### Vaccinations by availabilty regression (US)
+
+* three weeks: 2021-05-17 to 2021-06-06
+* vaccination counts from covid act now
+* adjust slots/person by booked/vaccinations to account for UNIVAF coverage  (_is there anything circular?_)
+
+
+```{r}
+dav  = dav %>% filter(slot_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
+                      slot_time < as.POSIXct('2021-06-07 00:00:00', 'UTC')) 
+dav$w = isoweek(dav$slot_time)
+```
+
+```{r}
+dvax = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeseries.csv")) %>%
+  select(date, fips, state, vax=actuals.vaccinationsCompleted, vax_rate2=metrics.vaccinationsCompletedRatio)
+
+dvaxC = inner_join(
+    dvax %>% filter(date == '2021-05-17') %>% select(fips, vax, vax_rate2),
+    dvax %>% filter(date == '2021-06-06') %>% select(fips, vax),
+    by='fips'
+  ) %>%
+  mutate(n_vax=vax.y-vax.x) %>%
+  select(fips, n_vax, vax_rate2)
+
+dagg <- dav %>% select(-county) %>%
+  inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(state, fips) %>%
+  summarize(
+    n_locations=n_distinct(id),
+    n_slots=n(),
+    n_booked=sum(booked),
+    n_slots_inside=sum(work_time),
+    n_slots_outside=sum(1-work_time),
+    p_outside=mean(1-work_time),
+    avg_range=mean(range),
+    avg_range_outside=mean(ifelse(work_time==0, range, NA), na.rm=T),
+    avg_ahead=mean(last_time_ahead),
+    avg_ahead_outside=mean(ifelse(work_time==0, last_time_ahead, NA), na.rm=T)
+  ) %>% ungroup() %>%
+  left_join(dvaxC, by='fips') %>%
+  left_join(dcou %>% select(fips, population, vax_rate, hesitant), by='fips') %>%
+  mutate(
+    slots_per_person=n_slots/population,
+    slots_per_person_inside=n_slots_inside/population,
+    slots_per_person_outside=n_slots_outside/population,
+    book_per_vax=n_booked/n_vax
+  ) %>%
+  filter(!is.na(fips)) %>%
+  mutate(slots_per_person = slots_per_person/book_per_vax) %>% filter(is.finite(slots_per_person))
+```
+
+```{r, fig.height=10, fig.width=12}
+X = dagg %>% mutate(Y=n_vax/population, population=log(population)) %>% select(Y, population, hesitant, vax_rate2, slots_per_person, avg_range, avg_ahead, p_outside) %>%
+  filter(Y > 0, slots_per_person < 0.2)
+GGally::ggpairs(X)
+```
+```{R}
+stargazer::stargazer(
+  lm(n_vax/population ~ state, data=dagg),
+  lm(n_vax/population ~ slots_per_person + avg_range + avg_ahead + state, data=dagg),
+  lm(n_vax/population ~ hesitant + vax_rate2 + state, data=dagg),
+  lm(n_vax/population ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead + state, data=dagg),
+  lm(log(n_vax) ~ state + log(population), data=dagg),
+  lm(log(n_vax) ~ slots_per_person + avg_range + avg_ahead + state + log(population), data=dagg),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + state + log(population), data=dagg),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead + state + log(population), data=dagg),
+  covariate.labels = c("Slots/Person", "Average range (hrs)", "Average time ahead (hrs)", "% hesitant (CDC survey)", "Prior vax rate", "Population (log)", "Intercept"),
+  #add.lines = list(c("States", "All", S, "All", S, "All", S)),
+  omit='state',
+  type='text', no.space = T, keep.stat = c('n','adj.rsq')
+)
+```
+
+* availability correlates with vaccination rates, accounting for hestitancy and under different specifications
+* increase in $R^2$ is modest
+
+**TODO**: add demographic variables??
+
+
+Now, week over week (only two weeks since we don't have vaccination numbers for this week until end of week):
+
+```{r}
+dvaxCW = dvax %>%
+  mutate(w=isoweek(date)) %>% filter(year(date) == 2021, w > 19, w < 23) %>%  # should be 24 but not there yet.
+  group_by(fips, w) %>% summarize(max_vax=max(vax, na.rm=T), vax_rate2=min(vax_rate2, na.rm=T)) %>%
+  group_by(fips) %>% arrange(w) %>% mutate(n_vax=max_vax-lag(max_vax)) %>% ungroup() %>% arrange(fips, w) %>%
+  filter(is.finite(n_vax), n_vax > 0) %>%
+  mutate(w = w - 1)  # join to the week before!
+
+daggW <- dav %>% select(-county) %>%
+  inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(state, fips, w) %>%
+  summarize(
+    n_locations=n_distinct(id),
+    n_slots=n(),
+    n_booked=sum(booked),
+    p_outside=mean(1-work_time),
+    avg_range=mean(range),
+    avg_ahead=mean(last_time_ahead),
+  ) %>% ungroup() %>%
+  inner_join(dvaxCW, by=c('fips', 'w')) %>%
+  inner_join(dcou %>% select(fips, population, vax_rate, hesitant), by='fips') %>%
+  mutate(slots_per_person=n_slots/population, book_per_vax=n_booked/n_vax) %>%
+  filter(!is.na(fips)) %>%
+  #select(state, fips, w, n_slots, n_booked, slots_per_person, avg_range, avg_ahead, n_vax, book_per_vax, vax_rate2, population, hesitant) %>%
+  mutate(slots_per_person = slots_per_person/book_per_vax) %>% filter(is.finite(slots_per_person))
+```
+
+```{r}
+stargazer::stargazer(
+  lm(n_vax/population ~ state, data=daggW),
+  lm(n_vax/population ~ slots_per_person + avg_range + avg_ahead + state, data=daggW),
+  lm(n_vax/population ~ hesitant + vax_rate2 + state, data=daggW),
+  lm(n_vax/population ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead + state, data=daggW),
+  lm(log(n_vax) ~ state + log(population), data=daggW),
+  lm(log(n_vax) ~ slots_per_person + avg_range + avg_ahead + state + log(population), data=daggW),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + state + log(population), data=daggW),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead + state + log(population), data=daggW),
+  covariate.labels = c("Slots/Person", "Average range (hrs)", "Average time ahead (hrs)", "% hesitant (CDC survey)", "Prior vax rate", "Population (log)", "Intercept"),
+  omit='state',
+  type='text', no.space = T, keep.stat = c('n','adj.rsq')
+)
+```
+
+* avg range negative now

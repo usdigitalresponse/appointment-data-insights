@@ -1,5 +1,5 @@
 ---
-title: "Univaf appointment availability data - Coverage"
+title: "UNIVAF appointment availability data - Coverage"
 output:
   html_document:
     toc: true
@@ -26,21 +26,90 @@ dav2 = read_availability_data() %>%
 ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
 ```
 
-* In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [univaf](http://getmyvax.org/docs/) project.
+* In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project.
 * We look at the two weeks between 2021-05-24 and 2021-06-06.
 * We count a slot as "booked" if we see it available first, and then not anymore (up to two hours before the appointment starts).
 
 **TLDR**
 
-* Slot-level Appointment data availability ranges from 19% (NH) to 95% (CO).
-* We estimate that somewhere between 0% (NH) and 138% (WV) of vaccines administered in the last two weeks are covered in our slot-level data.
+* Slot-level Appointment data availability ranges from 19% (NH) to 95% (CO) of loctions.
+* We estimate that about 20% of vaccines administered in the last two weeks are covered in our slot-level data. Coverage is the highest in soutern states.
 * For locations that report slots and/or appointment numbers, the reporting is very stable.
-* For states: ME, VT, WI have the most unreliable reporting. For providers, walgreens has the most unreliable reporting.
+* For states, ME, VT, WI have the most unreliable reporting. For providers, walgreens has the most unreliable reporting.
 
 
-## Coverage
+## Sample Data
 
-We look at how many locations we have, how many have availability at all, how many report slot-level data. Then we compare these to the population and the number of vaccinations that happened during this time (two weeks). These numbers might not match up (vaccinations could be reported later), so the "share of vaccinations covered" statistic could go over 100%.
+Here are the actual availability counts (not necessarily slot-level data) for a sample of 25 locations. You can see different supply patterns, and some example locations that only publish "has availability" (rather than "x appointments") info.
+
+```{r sample}
+set.seed(0)
+ids = rbind(
+  # sample 2 on/off places
+  dav2 %>% filter(availability=='+') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(2),
+  # sample 23 numeric places
+  dav2 %>% filter(availability!='0' & availability != '+' & availability != '1') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(23))
+```
+
+```{r plot_sample, fig.height=6, fig.width=9}
+dav2 %>%
+  filter(id %in% ids$id) %>% mutate(availability=ifelse(availability=='+', 1, as.numeric(availability))) %>%
+  inner_join(dloc) %>%
+  mutate(name=paste(id, name)) %>%
+  arrange(id, checked_time) %>%
+  ggplot(aes(checked_time, availability, color=provider)) + geom_point() + facet_wrap(~name, scales='free_y') +
+    xlab("Time checked") + ylab("Number of appointments available") +
+    my_theme() + theme(legend.position = 'none')
+```
+
+## Data over time
+
+```{r}
+davT  = read_availability_slot_data() %>%
+  mutate(ds=as.Date(slot_time)) %>%
+  filter(ds > as.Date('2021-05-16'), ds < as.Date('2021-06-15')) %>%
+  inner_join(dloc, by='id')
+
+dvaxT = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeseries.csv")) %>%
+  select(ds=date, fips, state, vax=actuals.vaccinationsCompleted) %>%
+  filter(ds > as.Date('2021-05-16'), ds < as.Date('2021-06-15')) %>%
+  group_by(fips, state) %>% arrange(ds) %>% mutate(n_vax=lead(vax)-vax) %>% ungroup() %>% arrange(state, fips, ds)
+```
+
+```{r, fig.height=4, fig.width=8}
+p1 <- davT  %>% group_by(ds) %>% summarize(n=n_distinct(id)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Locations") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p2 <- davT  %>% group_by(ds) %>% summarize(n=n()) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Slots") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p3 <- davT  %>% group_by(ds) %>% summarize(n=n()/n_distinct(id)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Slots/location") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())    
+p4 <- davT  %>% group_by(ds) %>% summarize(n=mean(booked)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Share slots booked") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p5 <- dvaxT %>% group_by(ds) %>% summarize(n=sum(n_vax, na.rm=T)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Vaccinations") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p6 <- inner_join(davT  %>% group_by(ds) %>% summarize(n_booked=sum(booked)),
+                 dvaxT %>% group_by(ds) %>% summarize(n_vax=sum(n_vax, na.rm=T)),
+                 by='ds') %>%
+  mutate(n=n_booked/n_vax) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Booked slots / Vaccination") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+Rmisc::multiplot(p1, p2, p3, p4, p5, p6, cols=3)
+```
+
+```{r, fig.height=6, fig.width=9}
+inner_join(davT %>% group_by(ds, state) %>% summarize(n_booked=sum(booked)),
+           dvaxT %>% group_by(ds, state) %>% summarize(n_vax=sum(n_vax, na.rm=T)),
+           by=c('ds', 'state')) %>%
+  mutate(n=n_booked/n_vax, n=ifelse(n > 1.5, 1.5, n)) %>% filter(n_vax > 0) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Booked slots / Vaccination") +
+    facet_wrap(~state, ) + 
+    my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+```
+
+
+
+## Coverage by state
+
+We look at how many locations we have, how many have availability at all, how many report slot-level data. Then we compare these to the population and the number of vaccinations that happened during this time (two weeks). These numbers might not match up (slots could stop being available without being booked, not all bookings will be of a 2nd shot, vaccinations could be reported later), so the "share of vaccinations covered" statistic could go over 100%.
 
 ```{r coverage_table}
 dzip %>%
@@ -76,32 +145,9 @@ dzip %>%
          `Share vax in data`=p_vax
          ) %>%
   DT::datatable()
+
 ```
 
-
-## Sample Data
-
-Here are the actual availability counts for a sample of 25 locations. You can see different supply patterns, and some example locations that only publish "has availability" (rather than "x appointments") info.
-
-```{r sample}
-set.seed(0)
-ids = rbind(
-  # sample 2 on/off places
-  dav2 %>% filter(availability=='+') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(2),
-  # sample 23 numeric places
-  dav2 %>% filter(availability!='0' & availability != '+' & availability != '1') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(23))
-```
-
-```{r plot_sample, fig.height=6, fig.width=9}
-dav2 %>%
-  filter(id %in% ids$id) %>% mutate(availability=ifelse(availability=='+', 1, as.numeric(availability))) %>%
-  inner_join(dloc) %>%
-  mutate(name=paste(id, name)) %>%
-  arrange(id, checked_time) %>%
-  ggplot(aes(checked_time, availability, color=provider)) + geom_point() + facet_wrap(~name, scales='free_y') +
-    xlab("Time checked") + ylab("Number of appointments available") +
-    my_theme() + theme(legend.position = 'none')
-```
 
 ## Continuity of data
 

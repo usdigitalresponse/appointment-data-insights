@@ -1,5 +1,5 @@
 ---
-title: "Univaf appointment availability data - New Jersey"
+title: "UNIVAF appointment availability data - New Jersey"
 output:
   html_document:
     toc: true
@@ -20,8 +20,16 @@ Dloc = dloc %>% filter(state==S)
 Dav = dav %>% filter(state==S)
 ```
 
-In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [univaf](http://getmyvax.org/docs/) project. The main question we're looking at is whether this kind of data can be used to identify issues in vaccine access by different demographics. Another question is whether this can help us understand the role of barriers to access, as opposed to more ideological barriers, can help us understand trailing vaccination rates.
+**TLDR**
 
+* Vaccine appointments are less available and available for less time in the weekends and outside of working hours.
+* Zip-codes with a higher social vulneratiblity index have less appointment availability.
+* Appointment availability is positively correlated with vaccinations.
+
+
+**Background**
+
+In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project. The main question we're looking at is whether this kind of data can be used to identify issues in vaccine access by different demographics. Another question is whether this can help us understand the role of barriers to access, as opposed to more ideological barriers, can help us understand trailing vaccination rates.
 
 * This report pertains to *slot-level* appointment data only. We often don't have slot-level data, so this covers a subset of appointments.
 * We take as the interval a slot is available for as the time between the first time we saw it being available to the last time.
@@ -32,7 +40,9 @@ In this report we take cursory look at slot-level COVID appointment availability
     3. what is the average _latest_ time (in number of hours ahead for the appointment time) you can still book the slot
 
 
-## State-level
+
+
+## Appointment availability over time (state)
 
 Stats:
 
@@ -94,6 +104,8 @@ Dav %>% group_by(provider, work_time) %>%
   knitr::kable(format='markdown')
 ```
 
+* Statistics will be mostly driven by Walgreens.
+
 
 ### Average hours slots are available for
 
@@ -114,15 +126,14 @@ Dav %>% group_by(dow, hod) %>% summarize(stat=mean(range)) %>%
 
 * Slots outside working hours are available for a shorter amount of time.
 
-By provider:
 
-```{r, fig.height=7, fig.width=17}
+```{r, fig.height=7, fig.width=17, eval=F}
+#By provider:
 Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
   group_by(dow, hod, provider) %>% summarize(stat=mean(range)) %>%
   dow_plot("Avg hours slots are available for", dow=F, wrap_by='provider', wrap_cols=3)
 ```
 
-* Availability is mostly driven by Walgreens.
 
 
 ### Average last-minute lead time
@@ -144,20 +155,15 @@ Dav %>% group_by(dow, hod) %>% summarize(stat=mean(last_time_ahead)) %>%
 
 * Evening slots don't seem to be harder to book for weekdays.
 
-
-By provider:
-
-
-```{r, fig.height=7, fig.width=17}
+```{r, fig.height=7, fig.width=17, eval=F}
+# By provider:
 Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
   group_by(dow, hod, provider) %>% summarize(stat=mean(last_time_ahead)) %>%
   dow_plot("Avg hours before slot still available", dow=F, wrap_by='provider', wrap_cols=3)
 ```
 
 
-## By county 
-
-### Appointment availability
+## Availability (county)
 
 ```{r, fig.height=3, fig.width=6}
 x = Dav %>% filter(!is.na(county)) %>% group_by(county, work_time) %>% summarize(stat=n())
@@ -198,66 +204,13 @@ x %>%
     my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.2), axis.title.x = element_blank())
 ```
 
-No strong trends, except for that slots during the workday are more available, and available for longer.
-
-
-### Availability vs Vaccination rates
-
-
-```{r}
-Dagg <- Dav %>%
-     group_by(county) %>%
-     summarize(
-       n_locations=n_distinct(id),
-       n_slots=n(),
-       n_slots_inside=sum(work_time),
-       n_slots_outside=sum(1-work_time),
-       p_outside=mean(1-work_time),
-       avg_range=mean(range),
-       avg_range_outside=mean(ifelse(work_time==0, range, NA), na.rm=T),
-       avg_ahead=mean(last_time_ahead),
-       avg_ahead_outside=mean(ifelse(work_time==0, last_time_ahead, NA), na.rm=T)
-     ) %>% ungroup() %>%
-     mutate(county=paste(county, 'County')) %>%
-     left_join(dcou %>% filter(state==S), by='county') %>%
-  mutate(
-    slots_per_person=n_slots/population,
-    slots_per_person_inside=n_slots_inside/population,
-    slots_per_person_outside=n_slots_outside/population
-  )
-```
-
-How does appointment availaility correlate with vaccination rates? Here we run a simple linear regression with counties as units. Hesitancy rates are taken from [this](https://data.cdc.gov/Vaccinations/Vaccine-Hesitancy-for-COVID-19-County-and-local-es/q9mh-h2tw/data) CDC survey.
-
-```{r}
-stargazer::stargazer(
-  lm(vax_rate ~ log(population), data=Dagg),
-  lm(vax_rate ~ log(population) + hesitant, data=Dagg),
-  lm(vax_rate ~ log(population) + hesitant + slots_per_person + avg_range + avg_ahead + p_outside, data=Dagg),
-  type='text', no.space = T, keep.stat = c('n','adj.rsq'),
-  covariate.labels = c("Population (log)", "% hesitant (CDC survey)", "Slots/Person", "Average range (hrs)", "Average time ahead (hrs)", "% slots outside working hours", "Intercept")
-)
-```
-
-**TODO** - impelement county-level vaccination difference
-
-Warning: these results should be taken with a big grain of salt. First, we're aggregating accross a three weeks worth of appointments. Second, we should really be comparing the _difference_ in vaccination rates (or the number of vaccinations) during some time with the appointment availability during that time.
-
-With this grain of salt, we see:
-
-* Appointment availability has some minor correlation with vaccination rates. Areas where slots are available for longer have higher vaccination rates.
-* More max time ahead is _postively_ correlated with vaccination rate. This counterintuitive result could be due to reverse causality (low supply as sign of demand rather than highlighting access-issues). 
-* The number of slots per person aand the share of appointments outside of working hours don't have a significant correlation.
-
-**TODO** - add demographic variables?
+* No strong trends, except for that slots during the workday are more available, and available for longer.
 
 
 
-## By zip
+## Availability by vulnerability (zip)
 
-On a zip-code level, we have more granularity for appointment and demographic data, but no vaccination and hesitancy rates.
-
-### Availability by vulnerability
+We can compare appointment availability by the demographics of the area that the distribution location is in. The most granual level is the zip-code. Of course, people can travel to locations outside of their zip-code, and so a better analysis would, for every zip code, take an average of the nearby locations weighted by their distance.
 
 ```{r}
 stats = dav %>% group_by(zip) %>%
@@ -266,7 +219,7 @@ stats = dav %>% group_by(zip) %>%
   mutate(slots_per_person=n_slots/total)
 ```
 
-We can do univariate correlations between vulnerability indices like SVI and availability statistics.
+We do univariate correlations between vulnerability indices like SVI and availability statistics. In this plot, the points represent individual zip-codes in `r S`. The red line is a linear fit of the relationship between the vulnerability statistic and the availbility statistic. The blue line represents that same relationship for all zipcodes in the US.
 
 ```{r, fig.height=5, fig.width=10}
 Stats = stats %>%
@@ -288,4 +241,71 @@ ggplot(Stats %>% filter(state==S), aes(val_x, val_y)) + geom_point() +
   my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank()) + facet_grid(var_y ~ var_x, scales='free')
 ```
 
-For most indices, we see a negative correlation between vulnerability and availability (household SVI excluded), and the trend for NJ is a bit worse than the national average.
+Note that for 'last available' (min lead time), less is better.
+For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded), and the trend for NJ is a bit worse than the national average. 
+
+
+
+## Does availability predict vaccinations? (county)
+
+```{r vax_data}
+dvax = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeseries.csv")) %>%
+  select(date, fips, state, vax=actuals.vaccinationsCompleted, vax_rate2=metrics.vaccinationsCompletedRatio)
+
+dvaxC = inner_join(
+    dvax %>% filter(date == '2021-05-17') %>% select(fips, vax, vax_rate2),
+    dvax %>% filter(date == '2021-06-06') %>% select(fips, vax),
+    by='fips'
+  ) %>%
+  mutate(n_vax=vax.y-vax.x) %>%
+  select(fips, n_vax, vax_rate2)
+
+dagg <- dav %>% select(-county) %>%
+  inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(state, fips) %>%
+  summarize(
+    n_locations=n_distinct(id),
+    n_slots=n(),
+    n_booked=sum(booked),
+    n_slots_inside=sum(work_time),
+    n_slots_outside=sum(1-work_time),
+    p_outside=mean(1-work_time),
+    avg_range=mean(range),
+    avg_range_outside=mean(ifelse(work_time==0, range, NA), na.rm=T),
+    avg_ahead=mean(last_time_ahead),
+    avg_ahead_outside=mean(ifelse(work_time==0, last_time_ahead, NA), na.rm=T)
+  ) %>% ungroup() %>%
+  left_join(dvaxC, by='fips') %>%
+  left_join(dcou %>% select(fips, population, vax_rate, hesitant), by='fips') %>%
+  mutate(
+    slots_per_person=n_slots/population,
+    slots_per_person_inside=n_slots_inside/population,
+    slots_per_person_outside=n_slots_outside/population,
+    book_per_vax=n_booked/n_vax
+  ) %>%
+  filter(!is.na(fips)) %>%
+  mutate(slots_per_person = slots_per_person/book_per_vax) %>% filter(is.finite(slots_per_person))
+
+Dagg = dagg %>% filter(state==S)
+
+```
+
+How does appointment availability relate to vaccinations? Unfortunately we don't have vaccination data on the zip-code level, so we'll do this analysis on a county level. Vaccination counts by county by day are pulled from [CovicActNow.org](https://covidactnow.org/). The outcome we look at is the _number of vaccinations_ that happened in the two weeks that we're looking at. We run a simple linear regression with counties as units:
+
+```{r}
+stargazer::stargazer(
+  lm(n_vax/population ~ slots_per_person + avg_range + avg_ahead, data=Dagg),
+  lm(n_vax/population ~ hesitant + vax_rate2, data=Dagg),
+  lm(n_vax/population ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead, data=Dagg),
+  lm(log(n_vax) ~ slots_per_person + avg_range + avg_ahead + log(population), data=Dagg),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + log(population), data=Dagg),
+  lm(log(n_vax) ~ hesitant + vax_rate2 + slots_per_person + avg_range + avg_ahead + log(population), data=Dagg),
+  covariate.labels = c("Slots/Person", "Avg range (hrs)", "Avg time ahead (hrs)", "% hesitant (CDC)", "Prior vax rate", "Population (log)", "Intercept"),
+  type='text', no.space = T, keep.stat = c('n','adj.rsq')
+)
+```
+
+* **Availability stats are very predictive of the number of vaccinations**, and explain a large amount of the variation.
+* There are two specifications of the outcome: vaccinations per individual (aka the difference in vaccination rate over the three weeks), and the log number of vaccinations (with the log population as a covariate).
+* Hesitancy (taken from [this](https://data.cdc.gov/Vaccinations/Vaccine-Hesitancy-for-COVID-19-County-and-local-es/q9mh-h2tw/data) CDC survey) and the prior vaccination rate are strongly correlated with vaccinations, but don't change the outcomes.
+
