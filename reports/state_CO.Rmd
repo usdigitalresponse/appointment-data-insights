@@ -1,5 +1,5 @@
 ---
-title: "UNIVAF appointment availability data - New Jersey"
+title: "UNIVAF appointment availability data - Colorado"
 date: "Last compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M')`"
 output:
   html_document:
@@ -10,7 +10,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
 source("shared.R")
-S = 'NJ'
+S = 'CO'
 
 dloc = read_location_data()
 dav  = read_availability_slot_data() %>% inner_join(dloc, by='id') %>%
@@ -26,7 +26,7 @@ Dav = dav %>% filter(state==S) %>%
 **TLDR**
 
 * Vaccine appointments are less available and available for less time in the weekends and outside of working hours.
-* Zip-codes with a higher social vulnerability index have less appointment availability.
+* On a zip-code level, social vulnerability is _not_ strongly correlated with appointment availability.
 * Appointment availability is positively correlated with vaccinations.
 
 
@@ -107,7 +107,15 @@ Dav %>% group_by(provider, work_time) %>%
   knitr::kable(format='markdown')
 ```
 
-* Statistics will be mostly driven by Walgreens.
+```{r, fig.height=3, fig.width=6}
+x = Dav %>% filter(!is.na(provider)) %>% group_by(provider, work_time) %>% summarize(stat=n()) %>% ungroup()
+
+x %>% mutate(provider=factor(provider, levels=x %>% filter(work_time==0) %>% arrange(-stat) %>% .$provider),
+             work_time=factor(work_time, labels=c("Outside\nwork","During\nwork"))) %>% 
+  ggplot(aes(provider, stat, color=work_time)) + geom_point() +
+    scale_y_continuous("Total number of slots") + scale_x_discrete("Provider") +
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+```
 
 
 ### Average hours slots are available for
@@ -137,6 +145,17 @@ Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
   dow_plot("Avg hours slots are available for", dow=F, wrap_by='provider', wrap_cols=3)
 ```
 
+```{r, fig.height=3, fig.width=6}
+x = Dav %>% filter(!is.na(provider)) %>% group_by(provider, work_time) %>% summarize(stat=mean(range, na.rm = T)) %>% ungroup()
+
+x %>% mutate(provider=factor(provider, levels=x %>% filter(work_time==0) %>% arrange(-stat) %>% .$provider),
+             work_time=factor(work_time, labels=c("Outside\nwork","During\nwork"))) %>% 
+  ggplot(aes(provider, stat, color=work_time)) + geom_point() +
+    scale_y_continuous("Avg hours slots are available for") +
+    scale_x_discrete("Provider") +
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+```
+
 
 
 ### Average last-minute lead time
@@ -149,7 +168,7 @@ Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
   dow_plot("Avg hours before slot still available", dow=F, rev=T)
 ```
 
-* From this view is looks like things are getting harder to book as time goes on, but this is at least partly driven by the earlier `slot_time` dates having less `checked_time` range to average over.
+* From this view is looks like appointments are last-minute bookable including outside working hours.
 
 ```{r, fig.height=2.65, fig.width=6.2}
 Dav %>% group_by(dow, hod) %>% summarize(stat=mean(last_time_ahead)) %>%
@@ -164,6 +183,18 @@ Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
   group_by(dow, hod, provider) %>% summarize(stat=mean(last_time_ahead)) %>%
   dow_plot("Avg hours before slot still available", dow=F, wrap_by='provider', wrap_cols=3)
 ```
+
+```{r, fig.height=3, fig.width=6}
+x = Dav %>% filter(!is.na(provider)) %>% group_by(provider, work_time) %>% summarize(stat=mean(last_time_ahead, na.rm = T)) %>% ungroup()
+
+x %>% mutate(provider=factor(provider, levels=x %>% filter(work_time==0) %>% arrange(-stat) %>% .$provider),
+             work_time=factor(work_time, labels=c("Outside\nwork","During\nwork"))) %>% 
+  ggplot(aes(provider, stat, color=work_time)) + geom_point() +
+    scale_y_continuous("Avg hours before slot still available") +
+    scale_x_discrete("Provider") +
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+```
+
 
 
 ## Availability (county)
@@ -231,8 +262,9 @@ Stats = stats %>%
   gather('var_x', 'val_x', -state, -zip, -hours_available, -last_available, -slots_per_person) %>% filter(!is.na(val_x)) %>%
   gather('var_y', 'val_y', -zip, -state, -var_x, -val_x) %>% filter(!is.na(val_y)) %>%
   filter(!(var_y=='hours_available' & val_y < 19)) %>%
-  filter(!(var_y=='slots_per_person' & val_y > 0)) %>%
+  filter(!(var_y=='slots_per_person' & (val_y > 0 | val_y  < -5))) %>%
   filter(!(var_y=='last_available' & val_y > 80)) %>%
+  filter(!(var_x=='p_black' & val_y < -7)) %>%
   mutate(var_x=factor(var_x, levels=c('p_black','svi_socioeconomic','svi_household','svi_minority','svi_housing'),
                      labels=c('Share Black (log)', 'Socioconomic SVI', 'Household SVI', 'Minority SVI', 'Housing SVI')),
          var_y=factor(var_y, levels=c('slots_per_person','hours_available','last_available'),
@@ -245,7 +277,7 @@ ggplot(Stats %>% filter(state==S), aes(val_x, val_y)) + geom_point() +
 ```
 
 Note that for 'last available' (min lead time), less is better.
-For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded), and the trend for `r S` is a bit worse than the national average. 
+For most indices, we the trend in `r S` is similar to the federal one. Generally, `r S` has better stats though: more slots/person, longer availability, but also less last-minute availabilty.
 
 
 
@@ -308,7 +340,6 @@ stargazer::stargazer(
 )
 ```
 
-* **Availability stats are very predictive of the number of vaccinations**, and explain a large amount of the variation.
+* **Availability stats are somewhaat predictive of the number of vaccinations**. More (adjusted) slots/person correlates with more vaccinations and a lower max lead time as well.
 * There are two specifications of the outcome: vaccinations per individual (aka the difference in vaccination rate over the three weeks), and the log number of vaccinations (with the log population as a covariate).
 * Hesitancy (taken from [this](https://data.cdc.gov/Vaccinations/Vaccine-Hesitancy-for-COVID-19-County-and-local-es/q9mh-h2tw/data) CDC survey) and the prior vaccination rate are strongly correlated with vaccinations, but don't change the outcomes.
-
