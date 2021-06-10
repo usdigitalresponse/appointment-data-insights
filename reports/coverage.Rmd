@@ -32,8 +32,8 @@ ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
 
 **TLDR**
 
-* Slot-level Appointment data availability ranges from 19% (NH) to 95% (CO) of loctions.
-* We estimate that about 20% of vaccines administered in the last two weeks are covered in our slot-level data. Coverage is the highest in soutern states.
+* Slot-level Appointment data availability ranges from 19% (NH) to 95% (CO) of locations.
+* We estimate that about 20% of vaccines administered in the last two weeks are covered in our slot-level data. Coverage is the highest in southern states.
 * For locations that report slots and/or appointment numbers, the reporting is very stable.
 * For states, ME, VT, WI have the most unreliable reporting. For providers, walgreens has the most unreliable reporting.
 
