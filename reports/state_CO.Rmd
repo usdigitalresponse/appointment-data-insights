@@ -1,5 +1,5 @@
 ---
-title: "UNIVAF appointment availability data - Colorado"
+title: "USDR Appointment Availability Data - Colorado"
 date: "Last compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M')`"
 output:
   html_document:

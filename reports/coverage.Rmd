@@ -1,5 +1,6 @@
 ---
-title: "UNIVAF appointment availability data - Coverage"
+title: "USDR Appointment Availability Data - Coverage"
+date: "Last compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M')`"
 output:
   html_document:
     toc: true
@@ -21,7 +22,7 @@ dav  = read_availability_slot_data() %>%
 
 # read non-slot availability data
 dav2 = read_availability_data() %>%
-  filter(checked_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
+  filter(checked_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
          checked_time < as.POSIXct('2021-06-07 00:00:00', 'UTC'))
 ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
 ```
@@ -62,7 +63,17 @@ dav2 %>%
     my_theme() + theme(legend.position = 'none')
 ```
 
-## Data over time
+## Slot-level data over time
+
+```{r, fig.height=2, fig.width=8}
+p1 <- dav2  %>% mutate(ds=as.Date(checked_time)) %>% group_by(ds) %>% summarize(n=n_distinct(id)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Locations") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p2 <- dav2  %>% filter(availability != '0') %>% mutate(ds=as.Date(checked_time)) %>% group_by(ds) %>% summarize(n=n_distinct(id)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Locations with availability") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+p3 <- dav2  %>% mutate(x=ifelse(availability != '0', 1, 0)) %>% mutate(ds=as.Date(checked_time)) %>% group_by(ds) %>% summarize(n=mean(x, na.rm=T)) %>%
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Share locations with availability") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+Rmisc::multiplot(p1, p2, p3, cols=3)
+```
 
 ```{r}
 davT  = read_availability_slot_data() %>%
@@ -78,7 +89,7 @@ dvaxT = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeserie
 
 ```{r, fig.height=4, fig.width=8}
 p1 <- davT  %>% group_by(ds) %>% summarize(n=n_distinct(id)) %>%
-  ggplot(aes(ds, n)) + geom_line() + ggtitle("Locations") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+  ggplot(aes(ds, n)) + geom_line() + ggtitle("Locations w slot availability") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
 p2 <- davT  %>% group_by(ds) %>% summarize(n=n()) %>%
   ggplot(aes(ds, n)) + geom_line() + ggtitle("Slots") + my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank())
 p3 <- davT  %>% group_by(ds) %>% summarize(n=n()/n_distinct(id)) %>%
@@ -178,7 +189,7 @@ dav_stats = dav3 %>%
 
 
 By state:
-```{r}
+```{r tab_state}
 dav_stats %>% select(-provider, -id) %>%
   group_by(state) %>% summarise_all(mean) %>%
   DT::datatable() %>%
@@ -186,7 +197,7 @@ dav_stats %>% select(-provider, -id) %>%
 ```
 
 By provider (with at least 100 locations):
-```{r}
+```{r tab_provider}
 dav_stats %>%
   inner_join(dav_stats %>% ungroup() %>% select(-state, -id) %>%
                group_by(provider)  %>% summarize(n=n()) %>% filter(n>101) %>%
