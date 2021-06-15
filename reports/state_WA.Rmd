@@ -1,5 +1,5 @@
 ---
-title: "USDR Appointment Availability Data - New York"
+title: "USDR Appointment Availability Data - Washington"
 date: "Last compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M')`"
 output:
   html_document:
@@ -10,7 +10,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
 source("shared.R")
-S = 'NY'
+S = 'WA'
 
 dloc = read_location_data()
 dav  = read_availability_slot_data() %>% inner_join(dloc, by='id') %>%
@@ -58,7 +58,7 @@ Dagg = dagg %>% filter(state==S)
 **TLDR**
 
 * Vaccine appointments are less available and available for less time in the weekends and outside of working hours.
-* Zip-codes with a higher social vulnerability index have less appointment availability. In `r S` this is worse than the national average for minority zip-codes.
+* Zip-codes with a higher social vulnerability index have less appointment availability.
 * Appointment availability is positively correlated with vaccinations.
 
 
@@ -83,7 +83,7 @@ Stats:
 Provider breakdown:
 
 ```{r}
-table(Dav %>% filter(provider != 'community_a_walgreens_pharmacy') %>% .$provider)
+table(Dav %>% filter(provider != 'kroger_covid') %>% .$provider)
 ```
 
 ## Coverage (county)
@@ -105,7 +105,7 @@ rbind(dagg %>% mutate(g='US'),
     my_theme() + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position=c(0.85, 0.85))
 ```
 
-* most counties seem to have an approximately 20% coverage rate.
+Most counties seem to have an approximately 10% coverage rate.
 
 
 ## Appointment availability over time (state)
@@ -184,7 +184,7 @@ Dav %>% group_by(dow, hod) %>% summarize(stat=mean(range)) %>%
 Average hours before slot still available. This represents the ability for people to book slots last-minute, so less is better.
 
 ```{r, fig.height=6.2, fig.width=6.2}
-Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
+Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>% filter(last_time_ahead > 0) %>%
   group_by(dow, hod) %>% summarize(stat=mean(last_time_ahead)) %>%
   dow_plot("Avg hours before slot still available", dow=F, rev=T)
 ```
@@ -192,7 +192,7 @@ Dav %>% mutate(dow=as.numeric(as.Date(slot_time))) %>%
 * From this view is looks like things are getting harder to book as time goes on, but this is at least partly driven by the earlier `slot_time` dates having less `checked_time` range to average over.
 
 ```{r, fig.height=2.65, fig.width=6.2}
-Dav %>% group_by(dow, hod) %>% summarize(stat=mean(last_time_ahead)) %>%
+Dav %>% filter(last_time_ahead > 0) %>% group_by(dow, hod) %>% summarize(stat=mean(last_time_ahead)) %>%
   dow_plot("Avg hours before slot still available", rev=T)
 ```
 
@@ -218,7 +218,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_log10("Total number of slots (log)") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
 ```
 
 ```{r, fig.height=3, fig.width=6}
@@ -231,7 +231,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_continuous("Avg hours slots are available for") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
 ```
 
 ```{r, fig.height=3, fig.width=6}
@@ -244,7 +244,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_continuous("Avg hours before slot still available") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.2), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.2), axis.title.x = element_blank())
 ```
 
 * No strong trends, except for that slots during the workday are more available, and available for longer.
@@ -273,6 +273,7 @@ Stats = stats %>%
   filter(!(var_y=='hours_available' & val_y < 19)) %>%
   filter(!(var_y=='slots_per_person' & val_y > 0)) %>%
   filter(!(var_y=='last_available' & val_y > 80)) %>%
+  filter(!(var_x=='p_black' & val_x < -6)) %>%
   mutate(var_x=factor(var_x, levels=c('p_black','svi_socioeconomic','svi_household','svi_minority','svi_housing'),
                      labels=c('Share Black (log)', 'Socioconomic SVI', 'Household SVI', 'Minority SVI', 'Housing SVI')),
          var_y=factor(var_y, levels=c('slots_per_person','hours_available','last_available'),
@@ -285,7 +286,7 @@ ggplot(Stats %>% filter(state==S), aes(val_x, val_y)) + geom_point() +
 ```
 
 Note that for 'last available' (min lead time), less is better.
-For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded), and the trend for `r S` is a worse than the national average for the share Black and Minority SVI dimensions. 
+For most indices, we see a **negative correlation between vulnerability and availability** (household SVI excluded). The trends for `r S` track the national ones, except for a slightly stronger effect for lead time. 
 
 *Note*: because we don't have vaccination data on the zip-code level, we can't (unlike below for counties) adjust slots/person by coverage, nor can we plot the SVI statistics against vaccination rates on a zip-code level.
 

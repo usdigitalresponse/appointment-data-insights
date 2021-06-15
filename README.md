@@ -14,6 +14,8 @@ https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/state_NJ.html)
 * [New York](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/state_NY.html)
+* [Washington](
+https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/state_WA.html)
 * [Sandbox](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/univaf_sandbox.html)
 
