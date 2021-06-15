@@ -218,7 +218,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_log10("Total number of slots (log)") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
 ```
 
 ```{r, fig.height=3, fig.width=6}
@@ -231,7 +231,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_continuous("Avg hours slots are available for") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.9), axis.title.x = element_blank())
 ```
 
 ```{r, fig.height=3, fig.width=6}
@@ -244,7 +244,7 @@ x %>%
   ggplot(aes(county, stat, color=work_time)) + geom_point() +
     scale_y_continuous("Avg hours before slot still available") +
     scale_x_discrete("County") +
-    my_theme() + theme(axis.text.x=element_text(angle=40, vjust=0.6), legend.position=c(0.9, 0.2), axis.title.x = element_blank())
+    my_theme() + theme(axis.text.x=element_text(angle=90), legend.position=c(0.9, 0.2), axis.title.x = element_blank())
 ```
 
 * No strong trends, except for that slots during the workday are more available, and available for longer.
