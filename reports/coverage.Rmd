@@ -17,18 +17,18 @@ dloc = read_location_data()
 
 dav  = read_availability_slot_data() %>%
   filter(slot_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-07 00:00:00', 'UTC')) %>%
+         slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC')) %>%
   inner_join(dloc, by='id')
 
 # read non-slot availability data
 dav2 = read_availability_data() %>%
   filter(checked_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
-         checked_time < as.POSIXct('2021-06-07 00:00:00', 'UTC'))
+         checked_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
 ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
 ```
 
 * In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project.
-* We look at the two weeks between 2021-05-24 and 2021-06-06.
+* We look at the three weeks between 2021-05-24 and 2021-06-14
 * We count a slot as "booked" if we see it available first, and then not anymore (up to two hours before the appointment starts).
 
 **TLDR**
@@ -50,6 +50,7 @@ ids = rbind(
   dav2 %>% filter(availability=='+') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(2),
   # sample 23 numeric places
   dav2 %>% filter(availability!='0' & availability != '+' & availability != '1') %>% group_by(id) %>% summarize(n=n()) %>% filter(n>10) %>% sample_n(23))
+
 ```
 
 ```{r plot_sample, fig.height=6, fig.width=9}
@@ -61,6 +62,7 @@ dav2 %>%
   ggplot(aes(checked_time, availability, color=provider)) + geom_point() + facet_wrap(~name, scales='free_y') +
     xlab("Time checked") + ylab("Number of appointments available") +
     my_theme() + theme(legend.position = 'none')
+
 ```
 
 ## Slot-level data over time
@@ -125,7 +127,7 @@ We look at how many locations we have, how many have availability at all, how ma
 ```{r coverage_table}
 dzip %>%
   group_by(state) %>% summarize(pop=sum(total, na.rm=T)) %>% 
-  inner_join(dvax, by='state') %>%
+  inner_join(dvax %>% group_by(state) %>% summarize(n_vax=sum(n_vax)), by='state') %>%
   inner_join(dloc %>% group_by(state) %>% summarize(n_locs=n()), by='state') %>%
   inner_join(dloc %>% inner_join(ids_dav) %>% group_by(state) %>% summarize(n_locs_av=n()), by='state') %>%
   mutate(p_locs_av=round(n_locs_av/n_locs, 3)) %>%
@@ -159,6 +161,24 @@ dzip %>%
 
 ```
 
+
+```{r county_data}
+inner_join(
+  dav %>%
+    filter(slot_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
+           slot_time < as.POSIXct('2021-06-07 00:00:00', 'UTC')) %>%
+    inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+    group_by(state, fips) %>% summarize(n_booked=sum(booked)),
+  dvax,
+  by=c('state','fips')) -> dagg2
+```
+
+```{r county_plot, fig.height=6, fig.width=9}
+dagg2 %>% mutate(p=n_booked/n_vax, p=ifelse(p > 1, 1, p)) %>% #filter(state=='FL') %>%
+  ggplot(aes(p)) + geom_histogram(bins=15) +
+    scale_x_continuous("Share of vaccinations in bookings", limits=c(-0.05, 1.1), breaks=seq(0, 1, 0.2)) +
+    my_theme() + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank()) + facet_wrap(~state, scales='free_y')
+```
 
 ## Continuity of data
 

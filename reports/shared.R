@@ -132,12 +132,12 @@ dsvi <- read_csv(paste0(data_folder, "/misc/svi_censustract.csv")) %>%
 dzip = dvs %>% left_join(dacs, by='zip') %>% left_join(dsvi, by='zip')
 
 # time series of vaccinations
-# https://api.covidactnow.org/v2/states.timeseries.csv?apiKey=302aad775e824d8e8d60ad1364dd30cb
-dvax = read_csv(paste0(data_folder, "/misc/vaccination rates/states.timeseries.csv")) %>%
-  select(date, fips, state, vax=actuals.vaccinationsCompleted)
+# https://api.covidactnow.org/v2/counties.timeseries.csv?apiKey=302aad775e824d8e8d60ad1364dd30cb
+dvax = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeseries.csv")) %>%
+  select(date, fips, state, vax=actuals.vaccinationsCompleted, old_vax_rate=metrics.vaccinationsCompletedRatio)
 dvax = inner_join(
-  dvax %>% filter(date == '2021-05-24') %>% select(state, vax),
-  dvax %>% filter(date == '2021-06-06') %>% select(state, vax),
-  by='state') %>%
+  dvax %>% filter(date == '2021-05-24') %>% select(state, fips, vax, old_vax_rate),
+  dvax %>% filter(date == '2021-06-13') %>% select(state, fips, vax),
+  by=c('state', 'fips')) %>%
   mutate(n_vax=vax.y-vax.x) %>%
-  select(state, n_vax)
+  select(state, fips, n_vax, old_vax_rate)
