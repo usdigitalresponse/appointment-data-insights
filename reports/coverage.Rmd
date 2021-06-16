@@ -17,8 +17,7 @@ dloc = read_location_data()
 
 dav  = read_availability_slot_data() %>%
   filter(slot_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC')) %>%
-  inner_join(dloc, by='id')
+         slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
 
 # read non-slot availability data
 dav2 = read_availability_data() %>%
@@ -26,6 +25,14 @@ dav2 = read_availability_data() %>%
          checked_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
 ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
 ```
+
+```{r vts_data}
+vts_l = read_csv("../../data/clean/vst_locations.csv")
+vts_c = read_csv("../../data/clean/vst_concordances.csv") %>% separate(external_id, into=c('key','val'), sep=':') %>% 
+  mutate(key=plyr::mapvalues(key, from=c("vaccinespotter_org"), to=c("vaccinespotter")))
+vts_e = read_csv("../../data/clean/ids_external.csv", col_names = c("external_id",'iid')) %>% separate(external_id, into=c('key','val'), sep=':')
+```
+
 
 * In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project.
 * We look at the three weeks between 2021-05-24 and 2021-06-14
@@ -56,7 +63,6 @@ ids = rbind(
 ```{r plot_sample, fig.height=6, fig.width=9}
 dav2 %>%
   filter(id %in% ids$id) %>% mutate(availability=ifelse(availability=='+', 1, as.numeric(availability))) %>%
-  inner_join(dloc) %>%
   mutate(name=paste(id, name)) %>%
   arrange(id, checked_time) %>%
   ggplot(aes(checked_time, availability, color=provider)) + geom_point() + facet_wrap(~name, scales='free_y') +
@@ -80,8 +86,7 @@ Rmisc::multiplot(p1, p2, p3, cols=3)
 ```{r}
 davT  = read_availability_slot_data() %>%
   mutate(ds=as.Date(slot_time)) %>%
-  filter(ds > as.Date('2021-05-16'), ds < as.Date('2021-06-15')) %>%
-  inner_join(dloc, by='id')
+  filter(ds > as.Date('2021-05-16'), ds < as.Date('2021-06-15'))
 
 dvaxT = read_csv(paste0(data_folder, "/misc/vaccination rates/counties.timeseries.csv")) %>%
   select(ds=date, fips, state, vax=actuals.vaccinationsCompleted) %>%
@@ -127,7 +132,7 @@ We look at how many locations we have, how many have availability at all, how ma
 ```{r coverage_table}
 dzip %>%
   group_by(state) %>% summarize(pop=sum(total, na.rm=T)) %>% 
-  inner_join(dvax %>% group_by(state) %>% summarize(n_vax=sum(n_vax)), by='state') %>%
+  inner_join(dvax %>% group_by(state) %>% summarize(n_vax=sum(n_vax, na.rm=T)), by='state') %>%
   inner_join(dloc %>% group_by(state) %>% summarize(n_locs=n()), by='state') %>%
   inner_join(dloc %>% inner_join(ids_dav) %>% group_by(state) %>% summarize(n_locs_av=n()), by='state') %>%
   mutate(p_locs_av=round(n_locs_av/n_locs, 3)) %>%
@@ -136,12 +141,28 @@ dzip %>%
                                           n_slots=n(),
                                           n_booked=sum(booked)), 
   by='state') %>%
+  left_join(
+    
+    dloc %>% select(iid=id, uuid) %>%
+      left_join(inner_join(vts_c, vts_e, by=c('key','val')) %>% select(vts_id, iid) %>% distinct() %>%
+            group_by(iid) %>% summarize(vts_id=paste(vts_id, collapse=',')), by='iid') %>%
+      group_by(state) %>% summarize(p_vts=mean(ifelse(is.na(vts_id), 0, 1))),
+    #vts_l,
+    #  inner_join(vts_c %>% filter(key=='getmyvax_org'),
+    #             dloc %>% select(uuid),
+    #             by='uuid'),
+    #  by=c("id"="vts_id")) %>%
+    #group_by(state) %>%
+    #summarize(n_vts=n(), p_vts=mean(ifelse(is.na(uuid), 0, 1))),
+    by='state'
+  ) %>%
   mutate(slots_per_person=round(n_slots/pop, 3),
          pop=big_numbers(pop, force_k=F, force_m=T),
          p_locs_slots=round(n_locs_slots/n_locs_av, 3),
          slots_per_location=round(n_slots/n_locs_slots),
          p_slots_booked=round(n_booked/n_slots, 3),
-         p_vax=round(n_booked/n_vax, 3)) %>%
+         p_vax=round(n_booked/n_vax, 3),
+         p_vts=round(p_vts, 3)) %>%
   select(State=state,
          `Pop (M)`=pop,
          `Vax. last 2 weeks`=n_vax,
@@ -155,10 +176,11 @@ dzip %>%
          `Slots per person`=slots_per_person,
          `Slots booked`=n_booked,
          `Share slots booked`=p_slots_booked,
-         `Share vax in data`=p_vax
+         `Share vax in data`=p_vax,
+         `Locations (VtS)`=n_vts,
+         `Share VtS locations`=p_vts
          ) %>%
   DT::datatable()
-
 ```
 
 
@@ -179,6 +201,56 @@ dagg2 %>% mutate(p=n_booked/n_vax, p=ifelse(p > 1, 1, p)) %>% #filter(state=='FL
     scale_x_continuous("Share of vaccinations in bookings", limits=c(-0.05, 1.1), breaks=seq(0, 1, 0.2)) +
     my_theme() + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank()) + facet_wrap(~state, scales='free_y')
 ```
+
+## Coverage of locations compared to vaccinatethestates.org
+
+Here is the total number of locations by county, in our database, as compared to vaccinatethestates.org. This does not take into account whether the location has availability or slot data.
+
+```{r, fig.height=3, fig.width=4}
+full_join(
+  dl %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_vts=n()),
+  inner_join(dc, dloc, by='uuid') %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_univaf=n()),
+  by=c('state','fips')) %>%
+  mutate(n_vts=coalesce(n_vts, 0), n_univaf=coalesce(n_univaf, 0)) %>%
+  ggplot(aes(n_vts, n_univaf)) + geom_jitter(alpha=0.5, width=.05, height=.05) +
+    geom_abline(slope=1, intercept=0, color='red') +
+    scale_x_log10("Vaccinate the States") +
+    scale_y_log10("UNIVAF") +
+    my_theme()
+```
+
+As you can see, VtS often has somewhat more locations than we do.
+
+Here is the distribution of the ratio of the counts:
+
+```{r, fig.height=3, fig.width=4}
+full_join(
+  dl %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_vts=n()),
+  inner_join(dc, dloc, by='uuid') %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_univaf=n()),
+  by=c('state','fips')) %>%
+  mutate(n_vts=coalesce(n_vts+1, 1), n_univaf=coalesce(n_univaf+1, 1), delta=n_vts/n_univaf) %>%
+  ggplot(aes(delta)) + geom_density() +
+    scale_x_continuous("VtS / UNIVAF", limits=c(0, 10)) +
+    scale_y_continuous("Density") +
+    geom_vline(xintercept=1, color='red') +
+    my_theme() + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+```{r, fig.height=6, fig.width=9}
+full_join(
+  dl %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_vts=n()),
+  inner_join(dc, dloc, by='uuid') %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>% group_by(state, fips) %>% summarize(n_univaf=n()),
+  by=c('state','fips')) %>%
+  mutate(n_vts=coalesce(n_vts+1, 1), n_univaf=coalesce(n_univaf+1, 1), delta=n_vts/n_univaf) %>%
+  ggplot(aes(delta)) + geom_density() +
+    scale_x_continuous("VtS / UNIVAF") +
+    geom_vline(xintercept=1, color='red') +
+    my_theme() + facet_wrap(~state, scales='free') + theme(axis.text.y=element_blank(), axis.title.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+VtS has more locations almost everywhere, except for DE and NH
+
+
 
 ## Continuity of data
 

@@ -13,8 +13,7 @@ source("shared.R")
 S = 'AK'
 
 dloc = read_location_data()
-dav  = read_availability_slot_data() %>% inner_join(dloc, by='id') %>%
-       mutate(ifelse(last_time_ahead < 0, 0, last_time_ahead)) %>%
+dav  = read_availability_slot_data() %>%
        filter(slot_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
               slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
 
