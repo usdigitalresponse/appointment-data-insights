@@ -19,8 +19,10 @@ https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/state_PA.html)
     - [Washington](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/state_WA.html)
-* [Sandbox](
+* [Univaf Sandbox](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/univaf_sandbox.html)
+* [VaccineSpotter Sandbox](
+https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/vs_sandbox.html)
 
 
 To-do:
