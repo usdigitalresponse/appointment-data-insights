@@ -10,9 +10,17 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
 source("shared.R")
+source("shared_map.R")
+
+
+start_date = '2021-05-19'
+end_date   =' 2021-07-15'
 
 dloc = read_location_data()
-dav  = read_availability_slot_data()
+dav  = read_availability_slot_data() %>%
+  filter(slot_time > as.POSIXct(paste0(start_date, ' 00:00:00'), 'UTC'),
+         slot_time < as.POSIXct(paste0(end_date  , ' 00:00:00'), 'UTC')) %>%
+  mutate(ds=as.Date(slot_time))
 ```
 
 
@@ -34,11 +42,9 @@ In this report we take cursory look at slot-level COVID appointment availability
 
 ```{r, fig.height=7, fig.width=10}
 dav %>% 
-  filter(slot_time > as.POSIXct('2021-05-10 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-21 00:00:00', 'UTC')) %>%
-  mutate(ds=as.Date(slot_time)) %>% group_by(state, ds) %>% summarize(n=n()) %>%
+   group_by(state, ds) %>% summarize(n=n()) %>%
   ggplot(aes(ds, n)) + geom_line() +
-    scale_x_date("Date", limits=as.Date(c('2021-05-10','2021-06-21'))) +
+    scale_x_date("Date", limits=as.Date(c(start_date, end_date))) +
     scale_y_continuous("Total number of slots (k)", labels=big_numbers) +
     my_theme() + facet_wrap(~state, scales = 'free_y')
 ```
@@ -47,8 +53,6 @@ dav %>%
 
 ```{r, fig.height=4, fig.width=6}
 dg = dav %>%
-  mutate(ds = as.Date(slot_time)) %>%
-  filter(ds > as.Date('2021-05-23'), ds < as.Date('2021-06-29')) %>%
   group_by(ds, dow) %>%
   summarize(n=n(), p_booked=mean(booked), range=mean(range, na.rm=T), lead=mean(last_time_ahead, na.rm=T))
 
@@ -68,8 +72,6 @@ Rmisc::multiplot(
 by state
 ```{r, fig.height=6, fig.width=9}
 dgs = dav %>%
-  mutate(ds = as.Date(slot_time)) %>%
-  filter(ds > as.Date('2021-05-23'), ds < as.Date('2021-06-29')) %>%
   group_by(ds, dow, state) %>%
   summarize(n=n(), p_booked=mean(booked), range=mean(range, na.rm=T), lead=mean(last_time_ahead, na.rm=T))
 
@@ -83,6 +85,21 @@ ggplot(dgs, aes(ds, lead)) + geom_line() + geom_point(data=dgs %>% filter(dow > 
   facet_wrap(~state)
 ```
 
+## Slots per person by ToW by State
+
+```{r, fig.height=6, fig.width=9}
+dav %>%
+  #filter(state %in% c("SD",'ND')) %>%
+  filter(slot_time > as.POSIXct('2021-05-21 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-07-16 00:00:00', 'UTC')) %>%
+  select(-county) %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(ds, dow, hod, fips, state) %>% summarize(n_slots=n()) %>%
+  left_join(dcou %>% select(fips, population), by='fips') %>%
+  group_by(dow, hod, state) %>% summarize(stat=mean(n_slots/population*1000)) %>%
+  mutate(stat=ifelse(stat > 0.25, 0.25, stat)) %>%
+  dow_plot("Average number of slots/person", wrap_by='state', wrap_cols = 10)
+```
+
 ## Visualization of range of `checked_at` time
 
 * sample 10 appointments per day (5 from walgreens and 5 other ones)
@@ -90,9 +107,9 @@ ggplot(dgs, aes(ds, lead)) + geom_line() + geom_point(data=dgs %>% filter(dow > 
 
 ```{r, fig.height=5, fig.width=8}
 dx <- dav %>%
-  filter(slot_time > as.POSIXct('2021-05-23 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-21 00:00:00', 'UTC')) %>%
-  mutate(ds=as.Date(slot_time), wg=provider=='walgreens') %>%
+  #filter(slot_time > as.POSIXct('2021-05-23 00:00:00', 'UTC'),
+  #       slot_time < as.POSIXct('2021-06-21 00:00:00', 'UTC')) %>%
+  mutate(wg=provider=='walgreens') %>%
   group_by(ds, wg) %>% sample_n(5) %>% ungroup() %>%
   arrange(slot_time) %>%
   mutate(row_id=row_number())
@@ -118,8 +135,8 @@ We can compare appointment availability by the demographics of the area that the
 
 ```{r}
 stats = dav %>% 
-  filter(slot_time > as.POSIXct('2021-05-23 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-28 00:00:00', 'UTC')) %>%
+  filter(slot_time > as.POSIXct('2021-05-19 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-06-24 00:00:00', 'UTC')) %>%
     group_by(zip) %>%
   summarize(n_locs=n_distinct(id), n_slots=n(), n_slots_weekend=sum(ifelse(type=='weekend', 1, 0)),
             hours_available=mean(range), last_available=mean(last_time_ahead)) %>%
@@ -171,18 +188,38 @@ stargazer::stargazer(
 * Unlike in the next section, we can't account for our coverage by dividing slots/person by bookings/vaccinations, so slots/person is at least partially a measure of coverage in this regression and shouldn't be taken very seriously.
 * Accounting for all five measures of vulnerability, zip-codes with a higher percentage Black residents have better booking time-based access, while zipcodes that are high on any of the SVI metrics have worse access (shorter booking windows and less time to book).
 
+
+```{r, eval=F}
+stargazer::stargazer(
+  lm(slots_per_person ~ svi_socioeconomic*state, data=stats %>% filter(!is.na(slots_per_person), !is.infinite(slots_per_person))),
+  lm(hours_available ~ svi_socioeconomic*state, data=stats),
+  lm(last_available ~ svi_socioeconomic*state, data=stats),
+  #covariate.labels = c("Population (log)", "Share Black", "Socioeonomic SVI", "Household SVI", "Minority SVI", "Housing SVI", "Intercept"),
+  type='text', no.space = T, keep.stat = c('n','adj.rsq')
+)
+
+CT,IA,FL,IL,MA,MT
+
+ggplot(stats, aes(svi_socioeconomic, hours_available)) + geom_point(shape='.') + geom_smooth(method='lm')
+
+
+ggplot(Stats %>% filter(state=='CT'), aes(val_x, val_y)) + geom_point() +
+  geom_smooth(method='lm', aes(color='CT'), alpha=0) +
+  geom_smooth(data=Stats, method='lm', aes(color='US'), alpha=0) +
+  my_theme() + theme(axis.title.x=element_blank(), axis.title.y=element_blank()) + facet_grid(var_y ~ var_x, scales='free')
+```
+
 ## Does availability predict vaccinations? (national, by county)
 
 * data is for 4 weeks: 2021-05-24 to 2021-06-20
 * vaccination counts from covid act now
 
 ```{r}
-dvax = make_vax('2021-05-24', '2021-06-28')
+dvax = make_vax('2021-05-24', '2021-06-21')
 
 dav  = read_availability_slot_data() %>%
   filter(slot_time > as.POSIXct('2021-05-23 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-28 00:00:00', 'UTC'))
-dav$w = isoweek(dav$slot_time)
+         slot_time < as.POSIXct('2021-06-21 00:00:00', 'UTC'))
 dagg = make_regression_data(dav, dzip, dvax, dcou, dpol)
 ```
 
@@ -190,30 +227,18 @@ How does appointment availability relate to vaccinations? Unfortunately we don't
 
 ```{r}
 stargazer::stargazer(
-  #lm(n_vax/population ~ state, data=dagg),
-  #lm(n_vax/population ~ state + slots_per_person + avg_range + avg_ahead, data=dagg),
   lm(n_vax/population ~ state + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
                               + avg_range  + avg_ahead, data=dagg),
-  #lm(n_vax/population ~ state + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
-  #                            + avg_range_workday + avg_range_weekend + avg_range_evening
-  #                            + avg_ahead_workday + avg_ahead_weekend + avg_ahead_evening
-  #   , data=dagg),
-  
-  #lm(n_vax/population ~ state + hesitant + p_rep_votes + old_vax_rate, data=dagg),
-  #lm(n_vax/population ~ state + hesitant + p_rep_votes + old_vax_rate + slots_per_person + avg_range + avg_ahead, data=dagg),
-  lm(n_vax/population ~ state + hesitant + p_rep_votes + old_vax_rate + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening + avg_range + avg_ahead, data=dagg),
-  #lm(n_vax/population ~ state + hesitant + p_rep_votes + old_vax_rate
-  #                       + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
-  #                       + avg_range_workday + avg_range_weekend + avg_range_evening
-  #                       + avg_ahead_workday + avg_ahead_weekend + avg_ahead_evening, data=dagg),
-  
+  lm(n_vax/population ~ state + hesitant + p_rep_votes + old_vax_rate
+                              + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
+                              + avg_range + avg_ahead, data=dagg),
   lm(log(n_vax) ~ state + log(population), data=dagg),
-  #lm(log(n_vax) ~ state + slots_per_person + avg_range + avg_ahead + log(population), data=dagg),
-  lm(log(n_vax) ~ state + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening + avg_range + avg_ahead + log(population), data=dagg),
-  #lm(log(n_vax) ~ state + hesitant + p_rep_votes + old_vax_rate + log(population), data=dagg),
-  #lm(log(n_vax) ~ state + hesitant + p_rep_votes + old_vax_rate + slots_per_person + avg_range + avg_ahead + log(population), data=dagg),
-  lm(log(n_vax) ~ state + hesitant + p_rep_votes + old_vax_rate + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening + avg_range + avg_ahead + log(population), data=dagg),
-  
+  lm(log(n_vax) ~ state + log(population) 
+                        + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
+                        + avg_range + avg_ahead, data=dagg),
+  lm(log(n_vax) ~ state + log(population) + hesitant + p_rep_votes + old_vax_rate
+                        + slots_per_person_workday + slots_per_person_weekend + slots_per_person_evening
+                        + avg_range + avg_ahead , data=dagg),
   covariate.labels = c("% hesitant (CDC)", "Trump vote share", "Prior vax rate", 
                        "Slots/Person (workday)", "Slots/Person (weekend)", "Slots/Person (evenings)", "Avg range (hrs)", "Avg lead time (hrs)",
                        "Population (log)", "Intercept"),
@@ -227,9 +252,7 @@ stargazer::stargazer(
 * There are two specifications of the outcome: vaccinations per individual (aka the difference in vaccination rate over the three weeks), and the log number of vaccinations (with the log population as a covariate).
 * Hesitancy (taken from [this](https://data.cdc.gov/Vaccinations/Vaccine-Hesitancy-for-COVID-19-County-and-local-es/q9mh-h2tw/data) CDC survey) and the prior vaccination rate are strongly correlated with vaccinations, but don't change the outcomes.
 
-**TODO**:
 
-* add demographic variables?
 
 
 ### Week over week
@@ -308,3 +331,46 @@ stargazer::stargazer(
 
 * avg range negative now
 * explained variance is 5-12% now.
+
+
+## Maps
+
+```{r map_data_state}
+dmap <- dav %>%
+  group_by(state) %>%
+  summarize(n_slots=n(), range=mean(range, na.rm=T), n_booked=sum(booked), n_weekend=sum(ifelse(type=='weekend', 1, 0))) %>% ungroup() %>%
+  left_join(dvax %>% group_by(state) %>% summarize(n_vax=sum(n_vax, na.rm=T)), by=c('state')) %>%
+  left_join(dcou %>% group_by(state) %>% summarize(population=sum(population)), by=c('state')) %>%
+  mutate(slots_per_person_raw=n_slots/population, book_per_vax=n_booked/n_vax, weekend=n_weekend/n_slots, weekend2=(n_weekend/2) / (n_slots/7)) %>%
+  mutate(slots_per_person = slots_per_person_raw/book_per_vax) %>% #filter(book_per_vax < 1, book_per_vax > 0.1) %>%
+  #filter(is.finite(slots_per_person)) %>%
+  inner_join(dcou %>% mutate(fips=str_sub(fips, 1, 2)) %>% select(fips, state) %>% distinct())
+```
+
+```{r maps_state, fig.height=5, fig.width=8}
+plot_map(dmap %>% select(fips, stat=slots_per_person) %>% mutate(stat=ifelse(stat>0.10, 0.10, stat)), title='Slots/Person', layer='state')
+plot_map(dmap %>% select(fips, stat=range)  %>% mutate(stat=ifelse(stat<40, 40, ifelse(stat>90, 90, stat))), title='Avg Range', layer='state')
+plot_map(dmap %>% select(fips, stat=weekend) %>% mutate(stat=ifelse(stat<0.12, 0.12, stat)), title='Weekend slots/slot', layer='state')
+plot_map(dmap %>% select(fips, stat=weekend2) %>% mutate(stat=ifelse(stat<0.4, 0.4, stat)), title='Relative prominence of weekend slots', layer='state')
+```
+
+
+```{r map_data_county}
+# our stats
+dmap <- dav %>%
+  select(-county) %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(state, fips) %>%
+  summarize(n_slots=n(), range=mean(range, na.rm=T), n_booked=sum(booked), n_weekend=sum(ifelse(type=='weekend', 1, 0))) %>% ungroup() %>%
+  left_join(dvax, by=c('fips', 'state')) %>%
+  left_join(dcou %>% select(fips, population, vax_rate), by='fips') %>%
+  mutate(slots_per_person_raw=n_slots/population, book_per_vax=n_booked/n_vax, weekend=n_weekend/n_slots) %>%
+  mutate(slots_per_person = slots_per_person_raw/book_per_vax) %>%
+  filter(!is.na(fips), is.finite(slots_per_person))
+```
+
+```{r maps_county, fig.height=5, fig.width=8}
+plot_map(dmap %>% select(fips, stat=slots_per_person) %>% mutate(stat=ifelse(stat>0.3, 0.3, stat)), title='Slots/Person')
+plot_map(dmap %>% select(fips, stat=range) %>% mutate(stat=ifelse(stat>100, 100, stat)), title='Avg Range')
+plot_map(dmap %>% select(fips, stat=weekend) %>% mutate(stat=ifelse(stat>0.3, 0.3, ifelse(stat<0.1, 0.1, stat))), title='Weekend Slots/Slots')
+```
+

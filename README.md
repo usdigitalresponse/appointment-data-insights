@@ -2,8 +2,7 @@
 
 This repo contains analysis based on USDR's [UNIVAF](http://getmyvax.org/docs/) appointment data. 
 
-
-Index (because GitHub doesn't render HTML somehow):
+Index (because GitHub doesn't render HTML):
 
 * [Coverage](https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/coverage.html)
 * State reports:
@@ -23,8 +22,5 @@ https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/univaf_sandbox.html)
 * [VaccineSpotter Sandbox](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/vs_sandbox.html)
-
-
-To-do:
-
-* ...
+* [Content for blogpost](
+https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/blogpost.html)

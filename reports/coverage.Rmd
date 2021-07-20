@@ -17,25 +17,28 @@ dloc = read_location_data()
 
 dav  = read_availability_slot_data() %>%
   filter(slot_time > as.POSIXct('2021-05-24 00:00:00', 'UTC'),
-         slot_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
+         slot_time < as.POSIXct('2021-06-28 00:00:00', 'UTC'))
 
 # read non-slot availability data
 dav2 = read_availability_data() %>%
   filter(checked_time > as.POSIXct('2021-05-17 00:00:00', 'UTC'),
-         checked_time < as.POSIXct('2021-06-14 00:00:00', 'UTC'))
+         checked_time < as.POSIXct('2021-06-28 00:00:00', 'UTC'))
 ids_dav = dav2 %>% filter(availability != '0') %>% select(id) %>% distinct()
+```
+```{r}
+dvax = make_vax('2021-05-17', '2021-06-28')
 ```
 
 ```{r vts_data}
 vts_l = read_csv("../../data/clean/vst_locations.csv")
 vts_c = read_csv("../../data/clean/vst_concordances.csv") %>% separate(external_id, into=c('key','val'), sep=':') %>% 
   mutate(key=plyr::mapvalues(key, from=c("vaccinespotter_org"), to=c("vaccinespotter")))
-vts_e = read_csv("../../data/clean/ids_external.csv", col_names = c("external_id",'iid')) %>% separate(external_id, into=c('key','val'), sep=':')
+vts_e = read_csv("../../data/clean/univaf_ids.csv", col_names = c("external_id",'iid')) %>% separate(external_id, into=c('key','val'), sep=':')
 ```
 
 
 * In this report we take cursory look at slot-level COVID appointment availability data as gathered by USDR's [UNIVAF](http://getmyvax.org/docs/) project.
-* We look at the three weeks between 2021-05-24 and 2021-06-14
+* We look at the three weeks between 2021-05-24 and 2021-06-28
 * We count a slot as "booked" if we see it available first, and then not anymore (up to two hours before the appointment starts).
 
 **TLDR**
@@ -143,9 +146,9 @@ dzip %>%
   by='state') %>%
   left_join(
     
-    dloc %>% select(iid=id, uuid) %>%
+    dloc %>% select(iid=id, uuid, state) %>%
       left_join(inner_join(vts_c, vts_e, by=c('key','val')) %>% select(vts_id, iid) %>% distinct() %>%
-            group_by(iid) %>% summarize(vts_id=paste(vts_id, collapse=',')), by='iid') %>%
+            group_by(iid) %>% summarize(vts_id=paste(vts_id, collapse=',')) %>% mutate(iid=as.numeric(iid)), by='iid') %>%
       group_by(state) %>% summarize(p_vts=mean(ifelse(is.na(vts_id), 0, 1))),
     #vts_l,
     #  inner_join(vts_c %>% filter(key=='getmyvax_org'),

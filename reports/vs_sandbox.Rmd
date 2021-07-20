@@ -10,6 +10,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=F, message=F, warning=F, cache=T, cache.lazy=F)
 source("shared.R")
+source("shared_map.R")
 
 locsvs = read_csv(paste0(data_folder, "/clean/vs_locations.csv"),   col_types='dcccccccccddc')
 
@@ -118,6 +119,20 @@ Rmisc::multiplot(
 * Wallgreens is overrepresented and releases their appointments on Friday apparently.
 
 
+## Slots per person by ToW by State
+
+```{r, fig.height=6, fig.width=9}
+davvs %>% mutate(ds=as.Date(slot_time)) %>%
+  filter(slot_time > as.POSIXct('2021-04-01 00:00:00', 'UTC'),
+         slot_time < as.POSIXct('2021-05-01 00:00:00', 'UTC')) %>%
+  select(-county) %>% inner_join(dzip %>% select(zip, fips=county_fips), by='zip') %>%
+  group_by(ds, dow, hod, fips, state) %>% summarize(n_slots=n()) %>%
+  left_join(dcou %>% select(fips, population), by='fips') %>%
+  group_by(dow, hod, state) %>% summarize(stat=mean(n_slots/population*1000)) %>%
+  mutate(stat=ifelse(stat > 0.25, 0.25, stat)) %>%
+  dow_plot("Average number of slots/person", wrap_by='state', wrap_cols = 10)
+```
+
 
 ## Availability by vulnerability (national, by zip)
 
@@ -169,7 +184,7 @@ Note that for 'last available' (min lead time), less is better.
 ## Does availability predict vaccinations? (national, by county)
 
 * appointment data is for month of April
-* vaccination counts from covid act now - the statistic compares vaccintaions on 2021-04-01 and 2021-05-01
+* vaccination counts from CovidActNow - the statistic compares vaccinations between 2021-04-01 and 2021-05-01
 
 ```{r}
 dvax = make_vax('2021-04-01', '2021-05-01')
@@ -179,7 +194,6 @@ dagg = davvs %>%
          slot_time < as.POSIXct('2021-05-01 00:00:00', 'UTC')) %>%
   make_regression_data(dzip, dvax, dcou, dpol) %>%
   filter(n_vax > 0)  # some localities stopped reporting vaccinations as some point..
-
 ```
 
 How does appointment availability relate to vaccinations? Unfortunately we don't have vaccination data on the zip-code level, so we'll do this analysis on a county level. Vaccination counts by county by day are pulled from [CovicActNow.org](https://covidactnow.org/). The outcome we look at is the _number of vaccinations_ that happened in the month that we're looking at. We run a simple linear regression with counties as units:
@@ -224,3 +238,44 @@ stargazer::stargazer(
 * There are two specifications of the outcome: vaccinations per individual (aka the difference in vaccination rate over the three weeks), and the log number of vaccinations (with the log population as a covariate).
 * Hesitancy (taken from [this](https://data.cdc.gov/Vaccinations/Vaccine-Hesitancy-for-COVID-19-County-and-local-es/q9mh-h2tw/data) CDC survey) and the prior vaccination rate are strongly correlated with vaccinations, but don't change the outcomes.
 
+
+
+## Compare against UNIVAF numbers
+
+```{r}
+dx.vs = davvs %>%  mutate(date=as.Date(slot_time)) %>% filter(date > as.Date('2021-05-15'), date < as.Date('2021-07-01')) %>%
+  group_by(state, date) %>% summarize(n=n()) %>% mutate(g='vs')
+
+dav = read_availability_slot_data(mode='new')
+dx.uf <- dav %>% mutate(date=as.Date(slot_time)) %>% filter(date > as.Date('2021-05-15'), date < as.Date('2021-07-01')) %>%
+  group_by(state, date) %>% summarize(n=n()) %>% mutate(g='univaf')
+```
+```{r, fig.height=8, fig.width=10}
+rbind(dx.vs , dx.uf) %>%
+  ggplot(aes(date, n, color=g)) + geom_line() +
+  ylab("Number of appointments") + xlab("Slot Date") +
+  facet_wrap(~state, scales='free_y') +
+  my_theme() + theme(legend.position = c(0.9, 0.1))
+```
+
+
+## Maps
+
+```{r map_data_state}
+dmap <- davvs %>%
+  group_by(state) %>%
+  summarize(n_slots=n(), range=mean(range, na.rm=T), n_booked=sum(booked), n_weekend=sum(ifelse(type=='weekend', 1, 0))) %>% ungroup() %>%
+  left_join(dvax %>% group_by(state) %>% summarize(n_vax=sum(n_vax, na.rm=T)), by=c('state')) %>%
+  left_join(dcou %>% group_by(state) %>% summarize(population=sum(population)), by=c('state')) %>%
+  mutate(slots_per_person_raw=n_slots/population, book_per_vax=n_booked/n_vax, weekend=n_weekend/n_slots, weekend2=(n_weekend/2) / (n_slots/7)) %>%
+  mutate(slots_per_person = slots_per_person_raw/book_per_vax) %>% #filter(book_per_vax < 1, book_per_vax > 0.1) %>%
+  #filter(is.finite(slots_per_person)) %>%
+  inner_join(dcou %>% mutate(fips=str_sub(fips, 1, 2)) %>% select(fips, state) %>% distinct())
+```
+
+```{r maps_state, fig.height=5, fig.width=8}
+plot_map(dmap %>% select(fips, stat=slots_per_person) %>% mutate(stat=ifelse(stat>0.25, 0.25, stat)), title='Slots/Person', layer='state')
+plot_map(dmap %>% select(fips, stat=range)  %>% mutate(stat=ifelse(stat<20, 20, ifelse(stat>100, 100, stat))), title='Avg Range', layer='state')
+#plot_map(dmap %>% select(fips, stat=weekend) %>% mutate(stat=ifelse(stat<0.12, 0.12, stat)), title='Weekend slots/slot', layer='state')
+plot_map(dmap %>% select(fips, stat=weekend2) %>% mutate(stat=ifelse(stat<0.4, 0.4, stat)), title='Relative prominence of weekend slots', layer='state')
+```

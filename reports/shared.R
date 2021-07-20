@@ -70,10 +70,12 @@ read_availability_data <- function() {
       inner_join(read_location_data(), by='id')
 }
 
-read_availability_slot_data <- function() {
-  read_csv(paste0(data_folder, "/clean/univaf_slots_old.csv"),
+read_availability_slot_data <- function(mode='new') {
+  read_csv(sprintf("%s/clean/univaf_slots_%s.csv", data_folder, mode),
                   col_names = c('id', 'slot_time', 'hod', 'dow', 'min', 'max')) %>%
   mutate(
+    ds=as.Date(slot_time),
+    w=isoweek(slot_time),
     range=as.numeric((max-min)/(60*60)),
     last_time_ahead=as.numeric(difftime(slot_time, max, units='hours')),
     last_time_ahead = ifelse(last_time_ahead < 0, 0, last_time_ahead),
@@ -140,6 +142,7 @@ dzip = dvs %>% left_join(dacs, by='zip') %>% left_join(dsvi, by='zip')
 
 # collect vaccination stats from both CDC and CovidAct now, which have different data
 make_vax <- function(d1, d2) {
+  # data last downloaded ata 2021-07-22
   
   # https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh
   dvax.cdc.raw = read_csv(paste0(data_folder, "/misc/vaccination rates/COVID-19_Vaccinations_in_the_United_States_County.csv")) %>%
@@ -194,24 +197,42 @@ make_regression_data <- function(dav, dzip, dvax, dcou, dpol) {
     summarize(
       n_locations=n_distinct(id),
       n_slots=n(),
+      n_slots_weekday=sum(ifelse(type!='weekend', 1, 0)),
       n_slots_workday=sum(ifelse(type=='workday', 1, 0)),
       n_slots_weekend=sum(ifelse(type=='weekend', 1, 0)),
       n_slots_evening=sum(ifelse(type=='evening', 1, 0)),
       avg_range=mean(range),
+      avg_range_weekday=mean(ifelse(type!='weekend', range, NA), na.rm=T),
       avg_range_workday=mean(ifelse(type=='workday', range, NA), na.rm=T),
       avg_range_weekend=mean(ifelse(type=='weekend', range, NA), na.rm=T),
       avg_range_evening=mean(ifelse(type=='evening', range, NA), na.rm=T),
       avg_ahead=mean(last_time_ahead),
+      avg_ahead_weekday=mean(ifelse(type!='workday', last_time_ahead, NA), na.rm=T),
       avg_ahead_workday=mean(ifelse(type=='workday', last_time_ahead, NA), na.rm=T),
       avg_ahead_weekend=mean(ifelse(type=='weekend', last_time_ahead, NA), na.rm=T),
       avg_ahead_evening=mean(ifelse(type=='evening', last_time_ahead, NA), na.rm=T),
-      n_booked=sum(booked)
+      n_booked=sum(booked),
+      rel_weekend=(n_slots_weekend/2) / (n_slots/7)
     ) %>% ungroup() %>%
     left_join(dvax, by=c('fips', 'state')) %>%
     left_join(dcou %>% select(fips, population, vax_rate, hesitant), by='fips') %>%
     left_join(dpol, by=c('fips', 'state')) %>%
+    # join in SVI data, aggregated from zip
+    left_join(
+      dzip %>% mutate(fips=county_fips) %>%
+        group_by(state, fips) %>%
+        summarize(
+          p_black           = sum(p_black*pop, na.rm=T)/sum(pop, na.rm=T),
+          svi_socioeconomic = sum(svi_socioeconomic*pop, na.rm=T)/sum(pop, na.rm=T),
+          svi_household     = sum(svi_household*pop, na.rm=T)/sum(pop, na.rm=T),
+          svi_minority      = sum(svi_minority*pop, na.rm=T)/sum(pop, na.rm=T),
+          svi_housing       = sum(svi_housing*pop, na.rm=T)/sum(pop, na.rm=T),
+          pop = sum(pop, na.rm=T)
+        ), by=c('fips','state')
+    ) %>%
     mutate(
       slots_per_person=n_slots/population,
+      slots_per_person_weekday=n_slots_weekday/population,
       slots_per_person_workday=n_slots_workday/population,
       slots_per_person_weekend=n_slots_weekend/population,
       slots_per_person_evening=n_slots_evening/population,
@@ -221,13 +242,38 @@ make_regression_data <- function(dav, dzip, dvax, dcou, dpol) {
     # adjust for coveragae
     mutate(
       slots_per_person = slots_per_person/book_per_vax,
+      slots_per_person_weekday = slots_per_person_weekday/book_per_vax,
       slots_per_person_workday = slots_per_person_workday/book_per_vax,
       slots_per_person_weekend = slots_per_person_weekend/book_per_vax,
       slots_per_person_evening = slots_per_person_evening/book_per_vax
     ) %>%
-    filter(
-      is.finite(slots_per_person),
-      book_per_vax < 1,   # p 0.92
-      book_per_vax > 0.1  # p 0.17
-    )
+    #filter(book_per_vax < 1,   # p 0.92
+    #       book_per_vax > 0.1  # p 0.17
+    #) %>%
+    filter(is.finite(slots_per_person))
 }
+
+
+
+dow_plot <- function(DF, title="TITLE", rev=F, wrap_by=NULL, dow=T, wrap_cols=2, log=F) {
+  if(log) { DF$stat = log(DF$stat) }
+  p <- DF %>%
+    ggplot(aes(hod, dow, color=stat)) + geom_point(size=9, shape=15) +
+    scale_x_continuous("Hour of Day", limits=c(6, 22),
+                       breaks=c(7, 10, 13, 16, 19, 22),
+                       labels=c("7am", "10am", "1pm", "4pm", "7pm", "10pm")) +
+    scale_colour_gradient(low=ifelse(rev, "green", "red"), high=ifelse(rev, "red", "green"), na.value=NA) +
+    my_theme() + theme(axis.ticks=element_blank()) + ggtitle(title)
+  if(dow) {
+    p = p + scale_y_reverse("Day of Week", breaks=0:6, labels=c("Mon","Tue","Wed","Thu","Fri","Sat","Sun"), limits=c(6.2, -0.2))
+  } else {
+    p = p + 
+      scale_y_reverse("Date",
+                      breaks=as.numeric(as.Date(c('2021-05-17', '2021-05-24', '2021-05-31',
+                                                  '2021-06-07', '2021-06-14', '2021-06-21', '2021-06-28'))),
+                      labels=c('May 17', 'May 24', 'May 31', 'Jun 07', 'Jun 14', 'Jun 21', 'Jun 28'))
+  }
+  if(!is.null(wrap_by)) { p <- p + facet_wrap(as.formula(paste0("~", wrap_by)), ncol=wrap_cols)  }
+  return(p)
+}
+
