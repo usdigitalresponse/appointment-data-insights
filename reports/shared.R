@@ -3,7 +3,7 @@ library(tidyverse)
 library(scales)
 library(lubridate)
 
-data_folder = '../../data'
+data_folder = '../data'
 
 
 ##
