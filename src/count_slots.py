@@ -151,27 +151,33 @@ def sum_slots_by_day(locations):
 
 if __name__ == '__main__':
     import lib_cli
-    args = lib_cli.create_agument_parser().parse_args()
+    parser = lib_cli.create_agument_parser()
+    parser.add_argument('--reference_date',
+                        help="Date of datafiles to use for deduplication, location attributes, etc.",
+                        type=lib_cli.cli_date, metavar='DATE')
+    args = parser.parse_args()
     dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
 
     data_path = Path('../data/univaf_raw')
     cache_path = Path('../data/univaf_counts')
 
     # TODO: should this be yesterday, instead of the last date of the sequence?
-    id_file = data_path / f'external_ids-{dates[-1]}.ndjson'
-    location_file = data_path / f'provider_locations-{dates[-1]}.ndjson'
+    reference_date = args.reference_date or args.end_date or args.start_date
+    id_file = data_path / f'external_ids-{reference_date}.ndjson'
+    location_file = data_path / f'provider_locations-{reference_date}.ndjson'
     log_files = [data_path / f'availability_log-{dt}.ndjson.gz' for dt in dates]
 
     # FIXME: this needs to automatically download the relevant files.
+    # See `download_files()` in process_univaf.py.
 
     # Rite Aid's API sent incorrect (and very large) numbers of slots for some
     # locations from 2021-09-09 through 2021-11-17 (when it broke). We want to
     # identify these bad values and replace them with something more realistic.
     rite_aid_bad_days = frozenset(lib_cli.get_dates_in_range(date(2021, 9, 9),
                                                              date(2021, 11, 17)))
-    rite_aid_ids = set((location['id']
-                        for location in read_json_lines(location_file)
-                        if location['provider'] == 'rite_aid'))
+    rite_aid_ids = frozenset((location['id']
+                              for location in read_json_lines(location_file)
+                              if location['provider'] == 'rite_aid'))
     def clean_count(checked_date, location_id, count):
         # Substitute the median number of slots for locations with anomalously
         # high slot counts. (Calculated from the month after fixing issues.)
