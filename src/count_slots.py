@@ -1,5 +1,6 @@
 from collections import defaultdict
 import concurrent.futures
+from datetime import date
 import functools
 import gzip
 import json
@@ -158,9 +159,29 @@ if __name__ == '__main__':
 
     # TODO: should this be yesterday, instead of the last date of the sequence?
     id_file = data_path / f'external_ids-{dates[-1]}.ndjson'
+    location_file = data_path / f'provider_locations-{dates[-1]}.ndjson'
     log_files = [data_path / f'availability_log-{dt}.ndjson.gz' for dt in dates]
 
     # FIXME: this needs to automatically download the relevant files.
+
+    # Rite Aid's API sent incorrect (and very large) numbers of slots for some
+    # locations from 2021-09-09 through 2021-11-17 (when it broke). We want to
+    # identify these bad values and replace them with something more realistic.
+    rite_aid_bad_days = frozenset(lib_cli.get_dates_in_range(date(2021, 9, 9),
+                                                             date(2021, 11, 17)))
+    rite_aid_ids = set((location['id']
+                        for location in read_json_lines(location_file)
+                        if location['provider'] == 'rite_aid'))
+    def clean_count(checked_date, location_id, count):
+        # Substitute the median number of slots for locations with anomalously
+        # high slot counts. (Calculated from the month after fixing issues.)
+        if (
+            checked_date in rite_aid_bad_days and
+            location_id in rite_aid_ids and
+            count > 500
+        ):
+            return 13
+        return count
     
     # Process each file, then combine the results into a dict of slot counts by
     # day by location ID:
@@ -172,9 +193,12 @@ if __name__ == '__main__':
     locations = defaultdict(lambda: defaultdict(lambda: 0))
     with concurrent.futures.ProcessPoolExecutor() as executor:
         summarizer = functools.partial(summarize_slots_in_file, cache_directory=cache_path)
-        for summary in executor.map(summarizer, log_files):
+        for file_path, summary in zip(log_files, executor.map(summarizer, log_files)):
+            file_date = FILE_DATE_PATTERN.search(file_path.name).group(1)
             for location_id, dates in summary.items():
                 for day, count in dates.items():
+                    # Modify counts that are known to be bad data.
+                    count = clean_count(file_date, location_id, count)
                     locations[location_id][day] = max(locations[location_id][day], count)
 
     locations = deduplicate_locations(locations, id_file)
