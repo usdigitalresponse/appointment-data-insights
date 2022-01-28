@@ -29,12 +29,12 @@ def deduplicate_locations(data, id_file):
     important because historical logs will contain reports for different
     location IDs that we later learned were duplicates.)
     """
-    clean = defaultdict(lambda: defaultdict(lambda: 0))
-
+    clean = {}
     lookup = {}
     for row in read_json_lines(id_file):
         location_id = row['provider_location_id']
         if not (location_id in lookup):
+            clean[location_id] = defaultdict(lambda: 0)
             lookup[location_id] = clean[location_id]
         if row['system'].startswith('univaf_'):
             lookup[row['value']] = clean[location_id]
@@ -43,8 +43,9 @@ def deduplicate_locations(data, id_file):
         clean_entry = lookup.get(location_id)
         if clean_entry is None:
             print(f"WARN: no matching row for: {location_id}")
-            clean_entry = clean[location_id]
+            clean_entry = defaultdict(lambda: 0)
             lookup[location_id] = clean_entry
+            clean[location_id] = clean_entry
 
         for day, count in dates.items():
             clean_entry[day] = max(clean_entry[day], count)
