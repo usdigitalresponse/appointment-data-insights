@@ -206,3 +206,20 @@ if __name__ == '__main__':
     sums = sum_slots_by_day(locations)
     for day in sums:
         print(f'{day["date"]}: {day["count"]:>9,d} (total: {day["total"]:>11,d})')
+
+    # # Break down counts by provider on each day.
+    # locations_data = {}
+    # for location in read_json_lines(location_file):
+    #     locations_data[location['id']] = location
+    
+    # days = defaultdict(lambda: defaultdict(lambda: 0))
+    # for location_id, counts in locations.items():
+    #     location_data = locations_data[location_id]
+    #     for day, count in counts.items():
+    #         days[day][location_data['provider'] or ''] += count
+
+    # for day in sorted(days.keys()):
+    #     total = sum(days[day].values())
+    #     print(f'{day}: {total:>9,d}')
+    #     for provider in sorted(days[day].keys()):
+    #         print(f'    {provider:.<32}.{days[day][provider]:.>9,d}')
