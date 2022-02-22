@@ -51,7 +51,7 @@ https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports
 * [VaccineSpotter Sandbox](
 https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/vs_sandbox.html)
 * [Content for blogpost](
-https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/blogpost.html)
+https://raw.githack.com/usdigitalresponse/appointment-data-insights/main/reports/blogpost.html) - published [here](https://medium.com/u-s-digital-response/what-vaccine-appointment-data-tells-us-three-major-takeaways-from-covid-19-cb6adcaa8acf)
 
 
 ## Code of Conduct
