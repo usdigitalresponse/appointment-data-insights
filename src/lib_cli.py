@@ -5,7 +5,7 @@ import dateutil.parser
 
 def cli_date(text):
     """Parse a timestamp string"""
-    return dateutil.parser.parse(text)
+    return dateutil.parser.parse(text).date()
 
 
 def create_agument_parser(**kwargs):
