@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
 import concurrent.futures
 from datetime import date
 import functools
@@ -35,7 +35,7 @@ def deduplicate_locations(data, id_file):
     for row in read_json_lines(id_file):
         location_id = row['provider_location_id']
         if not (location_id in lookup):
-            clean[location_id] = defaultdict(lambda: 0)
+            clean[location_id] = Counter()
             lookup[location_id] = clean[location_id]
         if row['system'].startswith('univaf_'):
             lookup[row['value']] = clean[location_id]
@@ -44,7 +44,7 @@ def deduplicate_locations(data, id_file):
         clean_entry = lookup.get(location_id)
         if clean_entry is None:
             print(f"WARN: no matching row for: {location_id}")
-            clean_entry = defaultdict(lambda: 0)
+            clean_entry = Counter()
             lookup[location_id] = clean_entry
             clean[location_id] = clean_entry
 
@@ -75,7 +75,7 @@ def summarize_slots(records, default_date=None):
           ...
         }
     """
-    locations = defaultdict(lambda: defaultdict(lambda: 0))
+    locations = defaultdict(Counter)
     for row in records:
         location_id = row['location_id']
         location = locations[location_id]
@@ -90,7 +90,7 @@ def summarize_slots(records, default_date=None):
                 if count > 5_000:
                     print(f"WARN: location {location_id} has {count} slots on {day}")
         elif slots:
-            count_by_day = defaultdict(lambda: 0)
+            count_by_day = Counter()
             for entry in slots:
                 day = entry['start'][0:10]
                 count = count_capacity_slots(entry)
@@ -135,7 +135,7 @@ def summarize_slots_in_file(file_path, cache_directory):
 
 
 def sum_slots_by_day(locations):
-    days = defaultdict(lambda: 0)
+    days = Counter()
     for counts in locations.values():
         for day, count in counts.items():
             days[day] += count
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     #     'location_id': {'2021-11-01': 28, '2021-11-02': 10, ...},
     #     ...
     #   }
-    locations = defaultdict(lambda: defaultdict(lambda: 0))
+    locations = defaultdict(Counter)
     with concurrent.futures.ProcessPoolExecutor() as executor:
         summarizer = functools.partial(summarize_slots_in_file, cache_directory=cache_path)
         for file_path, summary in zip(log_files, executor.map(summarizer, log_files)):
