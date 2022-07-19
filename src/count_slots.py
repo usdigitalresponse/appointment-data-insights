@@ -163,8 +163,8 @@ if __name__ == '__main__':
 
     # TODO: should this be yesterday, instead of the last date of the sequence?
     reference_date = args.reference_date or args.end_date or args.start_date
-    id_file = data_path / f'external_ids-{reference_date}.ndjson'
-    location_file = data_path / f'provider_locations-{reference_date}.ndjson'
+    id_file = data_path / f'external_ids-{reference_date}.ndjson.gz'
+    location_file = data_path / f'provider_locations-{reference_date}.ndjson.gz'
     log_files = [data_path / f'availability_log-{dt}.ndjson.gz' for dt in dates]
 
     # FIXME: this needs to automatically download the relevant files.
