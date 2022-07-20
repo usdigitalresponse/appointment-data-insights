@@ -7,20 +7,10 @@ import json
 import os
 from pathlib import Path
 import re
+import univaf_data
 
 
 FILE_DATE_PATTERN = re.compile(r'-(\d\d\d\d-\d\d-\d\d)\.')
-
-
-def read_json_lines(filepath, compressed=None):
-    if compressed is None:
-        compressed = str(filepath).endswith('.gz')
-
-    context = gzip.open(filepath, 'rt') if compressed else open(filepath)
-    with context as f:
-        for line in f:
-            if line and line != '\n':
-                yield json.loads(line)
 
 
 def deduplicate_locations(data, id_file):
@@ -32,7 +22,7 @@ def deduplicate_locations(data, id_file):
     """
     clean = {}
     lookup = {}
-    for row in read_json_lines(id_file):
+    for row in univaf_data.read_json_lines(id_file):
         location_id = row['provider_location_id']
         if not (location_id in lookup):
             clean[location_id] = Counter()
@@ -122,7 +112,7 @@ def summarize_slots_in_file(file_path, cache_directory):
     else:
         print(f'Reading {file_path}...')
         file_date = FILE_DATE_PATTERN.search(file_path.name).group(1)
-        result = summarize_slots(read_json_lines(file_path), file_date)
+        result = summarize_slots(univaf_data.read_json_lines(file_path), file_date)
 
         # Cache it for later use.
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,17 +148,20 @@ if __name__ == '__main__':
     args = parser.parse_args()
     dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
 
-    data_path = Path('../data/univaf_raw')
-    cache_path = Path('../data/univaf_counts')
+    data_path = univaf_data.CACHE_PATH
+    cache_path = univaf_data.DATA_PATH / 'univaf_counts'
 
     # TODO: should this be yesterday, instead of the last date of the sequence?
     reference_date = args.reference_date or args.end_date or args.start_date
-    id_file = data_path / f'external_ids-{reference_date}.ndjson.gz'
-    location_file = data_path / f'provider_locations-{reference_date}.ndjson.gz'
-    log_files = [data_path / f'availability_log-{dt}.ndjson.gz' for dt in dates]
+    id_file = univaf_data.log_file_path('external_ids', reference_date)
+    location_file = univaf_data.log_file_path('provider_locations', reference_date)
+    log_files = [univaf_data.log_file_path('availability_log', dt) for dt in dates]
 
-    # FIXME: this needs to automatically download the relevant files.
-    # See `download_files()` in process_univaf.py.
+    # Download raw data files if we don't already have them locally
+    univaf_data.download_historical_log('external_ids', reference_date)
+    univaf_data.download_historical_log('provider_locations', reference_date)
+    for dt in dates:
+        univaf_data.download_historical_log('availability_log', dt)
 
     # Rite Aid's API sent incorrect (and very large) numbers of slots for some
     # locations from 2021-09-09 through 2021-11-17 (when it broke). We want to
@@ -176,7 +169,7 @@ if __name__ == '__main__':
     rite_aid_bad_days = frozenset(lib_cli.get_dates_in_range(date(2021, 9, 9),
                                                              date(2021, 11, 17)))
     rite_aid_ids = frozenset((location['id']
-                              for location in read_json_lines(location_file)
+                              for location in univaf_data.read_json_lines(location_file)
                               if location['provider'] == 'rite_aid'))
     def clean_count(checked_date, location_id, count):
         # Substitute the median number of slots for locations with anomalously
@@ -215,7 +208,7 @@ if __name__ == '__main__':
 
     # # Break down counts by provider on each day.
     # locations_data = {}
-    # for location in read_json_lines(location_file):
+    # for location in univaf_data.read_json_lines(location_file):
     #     locations_data[location['id']] = location
     
     # days = defaultdict(lambda: defaultdict(lambda: 0))
