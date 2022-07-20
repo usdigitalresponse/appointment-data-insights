@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import gzip
 import json
 import os
@@ -54,9 +55,12 @@ def download_log_file(log_type, date):
     download_file(f'{log_type}/{file_name}', CACHE_PATH / file_name)
 
 
+@contextmanager
 def open_file(filepath, compressed=None):
     if compressed is None:
         compressed = str(filepath).endswith('.gz')
+    with (gzip.open(filepath, 'rt') if compressed else open(filepath)) as f:
+        yield f
 
 
 def read_json_lines(filepath, compressed=None):
