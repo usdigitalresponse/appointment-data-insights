@@ -2,13 +2,13 @@ from collections import defaultdict, Counter
 import concurrent.futures
 from datetime import date
 import functools
-import gzip
 import json
-import os
-from pathlib import Path
+import logging
 import re
+from tqdm import tqdm
 import univaf_data
 
+logger = logging.getLogger(__name__)
 
 FILE_DATE_PATTERN = re.compile(r'-(\d\d\d\d-\d\d-\d\d)\.')
 
@@ -106,11 +106,11 @@ def summarize_slots(records, default_date=None):
 def summarize_slots_in_file(file_path, cache_directory):
     cache_path = cache_directory / f'{file_path.name}.json'
     if cache_path.exists():
-        print(f'Reading cache: {cache_path}...')
+        logger.debug(f'Reading cache: {cache_path}...')
         with cache_path.open(encoding='utf-8') as f:
             return json.load(f)
     else:
-        print(f'Reading {file_path}...')
+        logger.debug(f'Reading {file_path}...')
         file_date = FILE_DATE_PATTERN.search(file_path.name).group(1)
         result = summarize_slots(univaf_data.read_json_lines(file_path), file_date)
 
@@ -192,7 +192,8 @@ if __name__ == '__main__':
     locations = defaultdict(Counter)
     with concurrent.futures.ProcessPoolExecutor() as executor:
         summarizer = functools.partial(summarize_slots_in_file, cache_directory=cache_path)
-        for file_path, summary in zip(log_files, executor.map(summarizer, log_files)):
+        summaries = zip(log_files, executor.map(summarizer, log_files))
+        for file_path, summary in tqdm(summaries, total=len(log_files), unit='days'):
             file_date = FILE_DATE_PATTERN.search(file_path.name).group(1)
             for location_id, dates in summary.items():
                 for day, count in dates.items():
