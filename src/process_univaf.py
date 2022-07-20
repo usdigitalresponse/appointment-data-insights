@@ -351,13 +351,10 @@ def download_files(ds, types=None):
 
 
 if __name__ == "__main__":
-    # read arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--start_date', help="first date to process")
-    parser.add_argument('-e', '--end_date', help="last date to process")
-    args = parser.parse_args()
-    # parse dates
-    dates = lib.parse_date(parser)
+    import lib_cli
+    args = lib_cli.create_agument_parser().parse_args()
+    dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
+
     print("[INFO] doing these dates: [%s]" % ', '.join(dates))
     # download files
     for date in dates:
