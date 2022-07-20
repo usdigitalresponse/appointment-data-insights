@@ -277,15 +277,13 @@ def download_file(fn):
 
 
 if __name__ == "__main__":
-    # read arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--start_date', help="first date to process")
-    parser.add_argument('-e', '--end_date', help="last date to process")
+    import lib_cli
+    parser = lib_cli.create_agument_parser()
     parser.add_argument('-c', '--clean_run', action='store_true',
                         help="replace previous locations file")
     args = parser.parse_args()
-    # parse dates
-    dates = lib.parse_date(parser)
+    dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
+
     # compute intersection with days that VaccineSpotter actually has data for
     try:
         # first try latest, from internet (if possible)

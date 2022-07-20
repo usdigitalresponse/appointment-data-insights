@@ -46,10 +46,11 @@ from glob import glob
 from shapely import wkb
 # internal
 import lib
+import univaf_data
 
 # set and make paths
-path_raw = lib.path_root + '/univaf_raw/'
-path_out = lib.path_root + '/univaf_clean/'
+path_raw = univaf_data.DATA_PATH / 'univaf_raw'
+path_out = univaf_data.DATA_PATH / 'univaf_clean'
 for path in [path_raw, path_out]:
     if not os.path.exists(path):
         os.mkdir(path)
@@ -340,29 +341,20 @@ def process_locations(path_out):
     return (locations, eid_to_id)
 
 
-def download_files(ds):
+def download_files(ds, types=None):
     """
     Download the files, if they don't already exist.
     """
-    main_url = "http://univaf-data-snapshots.s3.amazonaws.com/"
-    for type in ['availability_log', 'external_ids', 'provider_locations']:
-        url = '%s%s/%s-%s.ndjson' % (main_url, type, type, ds)
-        path_out = '%s%s-%s.ndjson' % (path_raw, type, ds)
-        if not os.path.exists(path_out):
-            print("Writing %s to %s" % (url, path_out))
-            with open(path_out, 'w') as f:
-                for line in urllib.request.urlopen(url):
-                    f.write(line.decode('utf-8'))
+    types = types or ['availability_log', 'external_ids', 'provider_locations']
+    for type in types:
+        univaf_data.download_log_file(type, ds)
 
 
 if __name__ == "__main__":
-    # read arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--start_date', help="first date to process")
-    parser.add_argument('-e', '--end_date', help="last date to process")
-    args = parser.parse_args()
-    # parse dates
-    dates = lib.parse_date(parser)
+    import lib_cli
+    args = lib_cli.create_agument_parser().parse_args()
+    dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
+
     print("[INFO] doing these dates: [%s]" % ', '.join(dates))
     # download files
     for date in dates:

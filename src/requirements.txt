@@ -4,3 +4,4 @@ ndjson ~=0.3
 pytz >=2021.1
 us ~=2.0
 shapely ~=1.7
+tqdm ~=4.62
