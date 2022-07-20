@@ -158,10 +158,10 @@ if __name__ == '__main__':
     log_files = [univaf_data.log_file_path('availability_log', dt) for dt in dates]
 
     # Download raw data files if we don't already have them locally
-    univaf_data.download_historical_log('external_ids', reference_date)
-    univaf_data.download_historical_log('provider_locations', reference_date)
+    univaf_data.download_log_file('external_ids', reference_date)
+    univaf_data.download_log_file('provider_locations', reference_date)
     for dt in dates:
-        univaf_data.download_historical_log('availability_log', dt)
+        univaf_data.download_log_file('availability_log', dt)
 
     # Rite Aid's API sent incorrect (and very large) numbers of slots for some
     # locations from 2021-09-09 through 2021-11-17 (when it broke). We want to

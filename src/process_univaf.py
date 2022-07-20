@@ -347,7 +347,7 @@ def download_files(ds, types=None):
     """
     types = types or ['availability_log', 'external_ids', 'provider_locations']
     for type in types:
-        univaf_data.download_historical_log(type, ds)
+        univaf_data.download_log_file(type, ds)
 
 
 if __name__ == "__main__":
