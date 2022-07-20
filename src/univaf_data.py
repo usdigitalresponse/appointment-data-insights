@@ -50,7 +50,7 @@ def log_file_path(log_type, date):
 
 
 def download_log_file(log_type, date):
-    file_name = log_file_name
+    file_name = log_file_name(log_type, date)
     download_file(f'{log_type}/{file_name}', CACHE_PATH / file_name)
 
 
