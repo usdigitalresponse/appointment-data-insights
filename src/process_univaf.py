@@ -49,7 +49,7 @@ import lib
 import univaf_data
 
 # set and make paths
-path_raw = univaf_data.DATA_PATH / 'univaf_raw'
+path_raw = univaf_data.CACHE_PATH
 path_out = univaf_data.DATA_PATH / 'univaf_clean'
 for path in [path_raw, path_out]:
     if not os.path.exists(path):
@@ -84,12 +84,10 @@ def do_date(ds):
     slots = lib.read_previous_state(path_raw, ds, 'slots')
 
     # construct list of files to read
-    files = sorted(glob('%savailability_log-%s.ndjson' % (path_raw, ds)))
+    files = sorted(glob('%savailability_log-%s.ndjson.gz' % (path_raw, ds)))
     for fn in files:
-
         print("[INFO]   reading " + fn)
-        f = open(fn, 'r')
-        for row in ndjson.reader(f):
+        for row in univaf_data.read_json_lines(fn):
             try:
                 # only process rows that have a (new) valid_at field
                 if "valid_at" not in row:
@@ -205,7 +203,6 @@ def do_date(ds):
                 print("Problem data: ")
                 print(lib.pp(row))
                 exit()
-        f.close()
 
     # write unclosed records
     for iid, row in avs.items():
@@ -236,10 +233,8 @@ def process_locations(path_out):
     # read zip map
     zipmap = lib.read_zipmap()
     # read 'new' locations
-    path_loc = glob(path_raw + 'provider_locations-*.ndjson')[-1]
-    with open(path_loc, 'r') as f:
-        new_locations = ndjson.load(f)
-    for row in new_locations:
+    path_loc = glob(path_raw + 'provider_locations-*.ndjson.gz')[-1]
+    for row in univaf_data.read_json_lines(path_loc):
         # grab internal numeric id, or make one
         sid = 'uuid:%s' % row['id']
         if sid in eid_to_id:
@@ -322,11 +317,10 @@ def process_locations(path_out):
         }
 
     # read 'new' external_id to uuid mapping
-    path_ids = glob(path_raw + 'external_ids-*.ndjson')[-1]
-    with open(path_ids, 'r') as f:
-        eid_to_uuid = {}
-        for x in ndjson.load(f):
-            eid_to_uuid['%s:%s' % (x['system'], x['value'])] = x['provider_location_id']
+    eid_to_uuid = {}
+    path_ids = glob(path_raw + 'external_ids-*.ndjson.gz')[-1]
+    for x in univaf_data.read_json_lines(path_ids):
+        eid_to_uuid['%s:%s' % (x['system'], x['value'])] = x['provider_location_id']
     # insert into external_id to iid mapping
     for eid, uuid in eid_to_uuid.items():
         uuid = 'uuid:' + uuid
@@ -341,13 +335,14 @@ def process_locations(path_out):
     return (locations, eid_to_id)
 
 
-def download_files(ds, types=None):
+def download_files(dates):
     """
     Download the files, if they don't already exist.
     """
-    types = types or ['availability_log', 'external_ids', 'provider_locations']
-    for type in types:
-        univaf_data.download_log_file(type, ds)
+    univaf_data.download_log_file('provider_locations', dates[-1])
+    univaf_data.download_log_file('external_ids', dates[-1])
+    for date in dates:
+        univaf_data.download_log_file('external_ids', date)
 
 
 if __name__ == "__main__":
@@ -356,9 +351,9 @@ if __name__ == "__main__":
     dates = lib_cli.get_dates_in_range(args.start_date, args.end_date)
 
     print("[INFO] doing these dates: [%s]" % ', '.join(dates))
-    # download files
-    for date in dates:
-        download_files(date)
+    # TODO: this should return the downloaded paths and other functions should
+    # use them rather than expecting them to be in a certain place.
+    download_files(dates)
     # process latest locations file
     (locations, eid_to_id) = process_locations(path_out)
     # iterate over days
