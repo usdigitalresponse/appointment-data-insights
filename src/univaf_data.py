@@ -27,10 +27,11 @@ def download_file(bucket_path, destination_path, force=False):
     if os.path.exists(destination_path) and not force:
         return
 
+    print(f'Downloading logfile to: "{destination_path}"')
     Path(destination_path).parent.mkdir(parents=True, exist_ok=True)
     # Use Boto instead of normal HTTP because it has logic for multithreaded
     # downloads that makes things ~6 times faster.
-    s3_client().download_file(UNIVAF_AWS_BUCKET, bucket_path, destination_path)
+    s3_client().download_file(UNIVAF_AWS_BUCKET, bucket_path, str(destination_path))
 
 
 def log_file_name(log_type, date):
