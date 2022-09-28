@@ -153,15 +153,11 @@ if __name__ == '__main__':
 
     # TODO: should this be yesterday, instead of the last date of the sequence?
     reference_date = args.reference_date or args.end_date or args.start_date
-    id_file = univaf_data.log_file_path('external_ids', reference_date)
-    location_file = univaf_data.log_file_path('provider_locations', reference_date)
-    log_files = [univaf_data.log_file_path('availability_log', dt) for dt in dates]
 
     # Download raw data files if we don't already have them locally
-    univaf_data.download_log_file('external_ids', reference_date)
-    univaf_data.download_log_file('provider_locations', reference_date)
-    for dt in dates:
-        univaf_data.download_log_file('availability_log', dt)
+    id_file = univaf_data.download_log_file('external_ids', reference_date)
+    location_file = univaf_data.download_log_file('provider_locations', reference_date)
+    log_files = [univaf_data.download_log_file('availability_log', dt) for dt in dates]
 
     # Rite Aid's API sent incorrect (and very large) numbers of slots for some
     # locations from 2021-09-09 through 2021-11-17 (when it broke). We want to

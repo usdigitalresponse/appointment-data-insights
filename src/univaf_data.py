@@ -43,7 +43,9 @@ def log_file_path(log_type, date):
 
 def download_log_file(log_type, date):
     file_name = log_file_name(log_type, date)
-    download_file(f'{log_type}/{file_name}', CACHE_PATH / file_name)
+    download_path = CACHE_PATH / file_name
+    download_file(f'{log_type}/{file_name}', download_path)
+    return download_path
 
 
 @contextmanager
@@ -59,12 +61,3 @@ def read_json_lines(filepath, compressed=None):
         for line in f:
             if line and line != '\n':
                 yield json.loads(line)
-
-
-def open_log_file(log_type, date):
-    filepath = log_file_path(log_type, date)
-    return open_file(filepath)
-
-
-def read_log_lines(log_type, date):
-    yield from read_json_lines(log_file_path(log_type, date))
