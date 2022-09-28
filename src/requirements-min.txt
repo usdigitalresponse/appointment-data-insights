@@ -1,0 +1,10 @@
+# Minimal requirements for basic analysis. Some scripts require additional
+# packages in requirements.txt.
+# This list should try to stay compatible with PyPy.
+
+# Note: ideally, we'd install boto3[crt], but crt does not work in PyPy. :(
+boto3 ~=1.24
+python-dateutil ~=2.8
+ndjson ~=0.3
+pytz >=2021.1
+tqdm ~=4.62

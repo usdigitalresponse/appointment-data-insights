@@ -180,42 +180,6 @@ def read_zipmap():
     return zipmap
 
 
-def parse_date(parser):
-    """
-    Parse date range from the command line parameters.
-    """
-    args = parser.parse_args()
-    # parse start_date
-    if args.start_date is None:
-        parser.print_help()
-        exit()
-    else:
-        try:
-            start_date = dateutil.parser.parse(args.start_date)
-        except Exception as e:
-            print("[ERROR] can't parse start_date %s, should be yyyy-mm-dd" %
-                  args.start_date)
-            exit()
-    # parse end_date
-    if args.end_date is None:
-        end_date = start_date
-    else:
-        try:
-            end_date = dateutil.parser.parse(args.end_date)
-        except Exception as e:
-            print("[ERROR] can't parse end_date %s, should be yyyy-mm-dd" %
-                  args.end_date)
-            exit()
-    # make date range
-    n = (end_date - start_date).days + 1
-    dates = [start_date + datetime.timedelta(days=x) for x in range(n)]
-    dates = sorted([x.strftime("%Y-%m-%d") for x in dates])
-    if len(dates) < 1:
-        print("[ERROR] date range has no elements")
-        exit()
-    return dates
-
-
 # inspired by https://stackoverflow.com/a/33245493
 def is_uuid(s, version=4):
     if not isinstance(s, str):
