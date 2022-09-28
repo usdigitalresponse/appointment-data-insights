@@ -1,29 +1,26 @@
+import boto3
+from botocore import UNSIGNED
+from botocore.client import Config
 from contextlib import contextmanager
 import gzip
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
-import urllib.request
 
 UNIVAF_AWS_BUCKET = 'univaf-data-snapshots'
 DATA_PATH = Path(__file__).parent.parent.absolute() / 'data'
 CACHE_PATH = DATA_PATH / 'univaf_raw'
-SUPPORTS_AWS_CLI = None
+
+S3_CLIENT = None
 
 
-def supports_aws_cli():
-    global SUPPORTS_AWS_CLI
-    if SUPPORTS_AWS_CLI is None:
-        result = subprocess.run(('which', 'aws'), capture_output=True)
-        SUPPORTS_AWS_CLI = result.returncode == 0
+def s3_client():
+    global S3_CLIENT
+    if S3_CLIENT is None:
+        # Don't bother loading credentials since the files we want are public.
+        S3_CLIENT = boto3.client('s3', config=Config(signature_version=UNSIGNED))
 
-    return SUPPORTS_AWS_CLI
-
-
-def s3_copy(source, destination):
-    subprocess.run(('aws', 's3', 'cp', source, destination))
+    return S3_CLIENT
 
 
 def download_file(bucket_path, destination_path, force=False):
@@ -31,15 +28,9 @@ def download_file(bucket_path, destination_path, force=False):
         return
 
     Path(destination_path).parent.mkdir(parents=True, exist_ok=True)
-    if supports_aws_cli():
-        s3_uri = f's3://{UNIVAF_AWS_BUCKET}/{bucket_path}'
-        subprocess.run(('aws', 's3', 'cp', '--no-sign-request', s3_uri, destination_path))
-    else:
-        url = f'http://{UNIVAF_AWS_BUCKET}.s3.amazonaws.com/{bucket_path}'
-        print(f'Writing {url} to {destination_path}', file=sys.stderr)
-        with open(destination_path, 'wb') as f:
-            with urllib.request.urlopen(url) as remote:
-                f.write(remote.read())
+    # Use Boto instead of normal HTTP because it has logic for multithreaded
+    # downloads that makes things ~6 times faster.
+    s3_client().download_file(UNIVAF_AWS_BUCKET, bucket_path, destination_path)
 
 
 def log_file_name(log_type, date):
